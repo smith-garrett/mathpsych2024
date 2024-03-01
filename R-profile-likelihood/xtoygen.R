@@ -32,7 +32,7 @@ beta = 0.6  # word-frequency effect
 kappa = 0.5   # inhibition by words left of fixation
 gamma = 1.0   # targeting exponent
 true = data.frame(nu,r,mt,iota,eta,beta,kappa,gamma)
-write.table(file="true.par",true,row.names=F,col.names=T)
+#write.table(file="true.par",true,row.names=F,col.names=T)
 
 # run toyswift function
 data = c()
@@ -40,6 +40,7 @@ for ( run in 1:NRUNS ) {
   for ( sen in 1:NSENT ) {
     idx = which(corpus$sentID==sen)
     lfreq = corpus$lfreq[idx]
+    #print(c(sen, lfreq))
     traj = toygen(nu,r,mt,iota,eta,beta,kappa,gamma,lfreq)
     traj = traj[,1:3]
     nfix = length(traj[,1])
@@ -48,7 +49,7 @@ for ( run in 1:NRUNS ) {
   }
 }
 out.df = data.frame(run=data[,1],sentID=data[,2],word=data[,3],fixdur=data[,4])
-write.table(file="sim-prod-sal.dat",out.df,row.names=F)
+write.table(file="sim-prod-sal3.dat",out.df,row.names=F)
 
 
 

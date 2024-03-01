@@ -2,7 +2,8 @@
 #  toySWIFT-LL
 #  (Version 2.0, October 11, 2022)
 #  (c) Ralf Engbert & Maximilian M. Rabe, Universität Potsdam
-#---------------------------------------------------------------------#---------------------------------------------------------------------
+#---------------------------------------------------------------------
+#---------------------------------------------------------------------
 toyLL <- function(lfreq,fixpos,fixdur,nu,r,mt,iota,eta,beta,kappa) {
   
   # model variables
@@ -42,7 +43,13 @@ toyLL <- function(lfreq,fixpos,fixdur,nu,r,mt,iota,eta,beta,kappa) {
     
     # 3. Spatial loglik
     k = fixpos[j+1]   # fixation position observed in the data
-    LLspat = LLspat + log(p[k])
+    # Garrett's addition:
+    if (p[k] < 0) {
+        LLspat = LLspat + -Inf
+    } else {
+        LLspat = LLspat + log(p[k])
+    }
+    #LLspat = LLspat + log(p[k])
     
     # 4. Temporal loglik
     tfix = fixdur[j+1]   # fixation duration observed in the data
@@ -52,9 +59,14 @@ toyLL <- function(lfreq,fixpos,fixdur,nu,r,mt,iota,eta,beta,kappa) {
     # ERROR!!! Or at least confusion: the *current* word is used here for iota, but
     # the *next* word is used for the dgamma...
     # ERROR!!! kappa is multiplied here again...
-    rate2 = rate*(1+iota*a[k])/ leftact#(1+kappa*leftact)
-    #print(leftact)
-    LLtime = LLtime + dgamma(tfix,shape,rate2,log=TRUE)
+    rate2 = rate*(1+iota*a[k]) / leftact#(1+kappa*leftact)
+    # Garrett's addition:
+    if (rate2^-1 <= .Machine$double.eps) {
+        LLtime = LLtime + -Inf
+    } else {
+        LLtime = LLtime + dgamma(tfix,shape,rate2,log=TRUE)
+    }
+    #LLtime = LLtime + dgamma(tfix,shape,rate2,log=TRUE)
   }
   loglik = c(LLtime,LLspat)
   return(loglik)

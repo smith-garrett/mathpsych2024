@@ -24,17 +24,17 @@ fmax = max(corpus$freq)
 corpus$lfreq = log10(corpus$freq)/log10(fmax)
 
 # load fixation sequences
-data = read.table("sim-prod-sal.dat",header=TRUE)
+data = read.table("sim-prod-sal3.dat",header=TRUE)
 sID_list = unique(data$sentID)
 Nruns = max(data$run)
 
 # parameter variation
 nu_vec = seq(from=0.05,to=0.95,by=0.01)
-r_vec = seq(from=0.1,to=30.1,by=1)
+r_vec = seq(from=0.01,to=30.01,by=1)
 mt_vec = seq(from=100,to=300,by=10)
 iota_vec = seq(from=0,to=3,by=0.05)
 eta_vec = seq(from=-3,to=-1,by=0.1)
-beta_vec = seq(from=0,to=1,by=0.05)
+beta_vec = seq(from=0,to=0.99,by=0.05) # PROBLEM: beta must be strictly less than 1
 kappa_vec = seq(from=-0.5,to=2,by=0.05)
 
 for ( par in 1:7 ) {

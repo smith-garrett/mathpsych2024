@@ -21,8 +21,9 @@ toygen <- function(nu,r,mt,iota,eta,beta,kappa,gamma,lfreq) {
   traj = c()  # store trajectory
   
   # simulation loop
-  while ( length(which(a<1))>0 & k<NW ) {
-    
+  # NOTE!!: only one word in the corpus has maxact = 1, so the processing will only stop when the last word is fixated
+  #while ( length(which(a<1))>0 & k<NW ) {
+  while ( length(which(a < amax))>0 & k<NW ) {
     # 1. Generate fixation duration
     if ( k>1 )  leftact = prod(1+kappa*(s[1:(k-1)]-10^eta)) #sum(s[1:(k-1)])#
     else leftact = 1
