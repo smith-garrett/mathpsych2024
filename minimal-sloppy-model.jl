@@ -86,6 +86,30 @@ end
 hypomle = optimize(hypomodel(), MLE(); autodiff=:forward)
   ╠═╡ =#
 
+# ╔═╡ 7a659b74-58cf-47e5-ae3c-6561259a434a
+# ╠═╡ disabled = true
+#=╠═╡
+infomat = informationmatrix(hypomle)
+  ╠═╡ =#
+
+# ╔═╡ e7d636fb-9a08-4bd5-a91a-856f3cd254be
+# ╠═╡ disabled = true
+#=╠═╡
+evals, evecs = eigen(infomat)
+  ╠═╡ =#
+
+# ╔═╡ 68732e43-e836-43d0-a1ce-7236851653d7
+# ╠═╡ disabled = true
+#=╠═╡
+log.(evals)
+  ╠═╡ =#
+
+# ╔═╡ 21861534-4930-4c2c-a242-bfe0612c6f5e
+# ╠═╡ disabled = true
+#=╠═╡
+cond(infomat)
+  ╠═╡ =#
+
 # ╔═╡ aa0ae0fb-3ef6-45d5-8393-d8e08ddac095
 # ╠═╡ disabled = true
 #=╠═╡
@@ -140,6 +164,16 @@ function allprofs(mod, vals, inits; mll=nothing)
 	return mles
 end
 
+# ╔═╡ 79491206-8656-452c-a72b-af86fc620e1c
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	nvals = 50
+	vals = [range(0.01, 5, nvals), range(0.01, 5, nvals)]
+	lls = allprofs(hypomodel(), vals, hypomle.values.array; mll=hypomle.lp)
+end
+  ╠═╡ =#
+
 # ╔═╡ 3f25aa3e-169b-41e5-b26b-e9a689ca3c10
 function plotprofs(lls, vals, mles = nothing, trues = nothing, args...; cutoff = nothing, ml = nothing, kwargs...)
 #function plotprofs(lls, vals, mles = nothing, trues = nothing)
@@ -162,6 +196,20 @@ function plotprofs(lls, vals, mles = nothing, trues = nothing, args...; cutoff =
 	end
 	return p
 end
+
+# ╔═╡ c515689e-14d8-480a-8fc4-d46f08ed513d
+# ╠═╡ disabled = true
+#=╠═╡
+#cutoff = -0.5 * quantile(Chisq(2), 0.95)
+cutoff = hypomle.lp - 0.5 * quantile(Chisq(2), 0.95)
+  ╠═╡ =#
+
+# ╔═╡ 0751222e-ee9e-4589-91e3-c26cb84281ca
+# ╠═╡ disabled = true
+#=╠═╡
+#plotprofs(lls, vals, hypomle.values.array, (l1 = λ₁, l2 = λ₂)); cutoff=cutoff, ml=hypomle.lp)
+plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
+  ╠═╡ =#
 
 # ╔═╡ 7121a12e-3b67-4ce1-8de7-7a0260beab06
 md"""
@@ -239,6 +287,9 @@ md"""
   - r + β * nlogfreq, β ~ Normal(0, σ): won't work b/c `r` isn't a vector
   - r * (λ + β * nlogfreq), β ~ Normal₊(1, σ)
 
+## NEW REWRITE
+
+Word frequency affects activation spreading: The higher the frequency, the more activation spreads. Also a perfectly reasonable approach.
 """
 
 # ╔═╡ f18f941d-f188-4b03-8c28-b092b018e541
@@ -274,7 +325,8 @@ function simsent(nwords, ps, worddict, sentnr = missing)
 		
 		# Updating
 		update_proc_rates!(λ, currword, ps.ν, σ)
-		update_activations!(activations, ps.r, λ .* max.(1.5, 1 .+ betas), fixdur, maxact)
+		#update_activations!(activations, ps.r * 10, λ .* min.(1.1, 1 .+ betas), fixdur, maxact)
+		update_activations!(activations, ps.r * 10, λ .* (1 .- exp.(-1 .* betas)), fixdur, maxact)
 		update_saliencies!(activations, saliencies, maxact, minsal)
 		update_probabilities!(probabilities, saliencies, ps.γ)
 
@@ -297,7 +349,14 @@ end
 # ╔═╡ 51ef3f2e-171b-4999-acd5-9613f4b13657
 # True parameter settings for generating data
 #p0 = (μ = 0.20, β = 0.6, ν = 0.25, r = 10.0, γ = 1.0, minsal=0.001)
-p0 = (μ = 0.220, β = 1.1, ν = 0.25, r = 10.0, γ = 1.0, minsal=0.001)
+p0 = (μ = 0.220, β = 0.6, ν = 0.25, r = 1.0, γ = 1.0, minsal=0.001)
+
+# ╔═╡ 7f60e641-7cbe-4e19-988d-8d4bfd9fae44
+begin
+	atemp = fill(0.5, 4)
+	update_activations!(atemp, p0.r * 10, ones(4) .* (1 .- exp.(-1 .* p0.β .* range(0.01, 0.99, 4))), 100, ones(4))
+	atemp
+end
 
 # ╔═╡ 3b4c8ef2-27e6-48f3-b952-e4809b500a0f
 simsent(10, p0, nlogfreqs, 1)
@@ -308,8 +367,8 @@ Simulate an experiment.
 """
 function simexp(nwordrange, nsents, worddict, ps)
 	# Preallocating space to save data
-	expdata = scanpath = Array{NamedTuple}(undef, 0)
-	sizehint!(scanpath, maximum(nwordrange) * nsents)
+	expdata = Array{NamedTuple}(undef, 0)
+	sizehint!(expdata, maximum(nwordrange) * nsents)
 	for i in 1:nsents
 		nwords = rand(nwordrange)
 		push!(expdata, simsent(nwords, ps, worddict, i)...)
@@ -320,7 +379,7 @@ end
 # ╔═╡ 8fec2b00-cf07-4f99-8b0e-1ce0efd99fb1
 begin
 	sentlens =  6:12 #20 #4:30 # 10:20 # [2]
-	nsents = 30 # 114 # 200
+	nsents = 100 # 114 # 200
 	data = simexp(sentlens, nsents, nlogfreqs, p0)
 end
 
@@ -334,7 +393,7 @@ plot(LogNormal(log(10), 0.5))
 	μ ~ LogNormal(log(0.200), 1)
 	ν ~ Beta(1.25, 1.25) # = 0.25 * one(T) # 
 	β ~ Normal(0, 0.05) # Beta(1.25, 1.25) # = 0.6 #
-	r ~ LogNormal(log(10), 0.5) # = 10.0 * one(T) #
+	r ~ LogNormal(log(1), 0.5) #LogNormal(log(10), 0.5) # = 10.0 * one(T) #
 	γ = one(T) # ~ truncated(Normal(1, 1), 0, Inf) # 
 	minsal = 10^-3 * one(T) # ~ Exponential(0.5)
 	
@@ -360,7 +419,8 @@ plot(LogNormal(log(10), 0.5))
 			rowidx = parentindices(row)[1]
 
 			update_proc_rates!(λ, currword, ν, σ)
-			update_activations!(activations, r, λ .* max.(1.5, 1 .+ betas), row.fixationduration, maxact)
+			#update_activations!(activations, r * 10, λ .* min.(1.1, 1 .+ betas), row.fixationduration, maxact)
+			update_activations!(activations, r * 10, λ .* (1 .- exp.(-1 .* betas)), row.fixationduration, maxact)
 			update_saliencies!(activations, saliencies, maxact, minsal)
 			update_probabilities!(probabilities, saliencies, γ)
 	
@@ -383,6 +443,9 @@ plot(LogNormal(log(10), 0.5))
 		end
 	end
 end
+
+# ╔═╡ 2e281e7f-1913-4e11-8aba-4b6ee3d81eb3
+plot(x -> 1 - exp(-x), xlims=(0, 5))
 
 # ╔═╡ 8b59d4f4-6ae4-49dc-b332-eacb30962e1d
 gdata = groupby(data, :sentnr);
@@ -412,11 +475,8 @@ catch
 	@warn "Bad matrix"
 end
 
-# ╔═╡ 21861534-4930-4c2c-a242-bfe0612c6f5e
-# ╠═╡ disabled = true
-#=╠═╡
-cond(infomat)
-  ╠═╡ =#
+# ╔═╡ 0e49d491-c07b-4a26-aaeb-34d7d5f2445f
+infomat = informationmatrix(mle0)
 
 # ╔═╡ 9ea8260b-5345-48b5-b131-74225ed8c237
 # Strong negative curvature for μ, much weaker for β and r
@@ -438,11 +498,11 @@ begin
 	annotate!([(j, i, text(round(cormat[i, j], digits=3), :grey)) for i in 1:size(cormat, 1) for j in 1:size(cormat, 2)])
 end
 
-# ╔═╡ 68732e43-e836-43d0-a1ce-7236851653d7
-# ╠═╡ disabled = true
-#=╠═╡
-log.(evals)
-  ╠═╡ =#
+# ╔═╡ 3a84a00c-b639-4b1d-adc8-9dae49bb8704
+evals, evecs = eigen(infomat)
+
+# ╔═╡ 3b09cece-e077-4539-82f3-680538c5e8f5
+log10.(evals)
 
 # ╔═╡ e0dccf20-bb57-46dc-81a3-9f5167eb0f67
 log10(maximum(abs.(evals)) / minimum(abs.(evals)))
@@ -516,12 +576,32 @@ inv(fim) * infomat
 # ╔═╡ 44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
 paramnames, p0
 
-# ╔═╡ 0751222e-ee9e-4589-91e3-c26cb84281ca
-# ╠═╡ disabled = true
-#=╠═╡
-#plotprofs(lls, vals, hypomle.values.array, (l1 = λ₁, l2 = λ₂)); cutoff=cutoff, ml=hypomle.lp)
-plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
-  ╠═╡ =#
+# ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
+begin
+	nvals = 25
+	vals = [range(p0.μ - 0.25*p0.μ, 0.25*p0.μ + p0.μ, nvals),
+			#range(0.01, 0.99, nvals),
+			range(0.01, 0.99, nvals),
+			range(0.0, 4*p0.β, nvals),
+			range(p0.r - 0.25*p0.r, 2*p0.r + p0.r, nvals)]#,
+			#range(0, 0.25*p0.r + p0.r, nvals)]#,
+			#range(p0.γ - 0.5*p0.γ, 0.5*p0.γ + p0.γ, nvals)]
+	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
+end
+
+# ╔═╡ 2f727f45-3836-4a8d-902a-6bbac192d921
+lls
+
+# ╔═╡ 69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
+# When considering all params at once:
+#cutoff = -0.5 * quantile(Chisq(length(paramnames)), 0.95) # mle0.lp
+# For 1D profiles:
+#cutoff = -0.5 * quantile(Chisq(1), 0.95)
+# Likelihood interval, Royall 1997
+cutoff = -log(32)
+
+# ╔═╡ 164bc3f8-ee2f-4f4f-a3d9-dd8bdbe9db27
+-0.5 * quantile(Chisq(1), 0.95), -log(32), -log(8), -log(32 * (length(paramnames) - 1))
 
 # ╔═╡ f1e3b447-6b88-480b-8074-437038024896
 prof_mle = [maximum(x) for x in values(lls)]
@@ -530,7 +610,7 @@ prof_mle = [maximum(x) for x in values(lls)]
 p0, nsents
 
 # ╔═╡ c6a9943e-d8cf-4425-b2bc-90335027cad4
-plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-10, 3))# ml=mle0.lp)
+plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-25, 3))# ml=mle0.lp)
 #plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
 
 # ╔═╡ abb7a33e-c9fc-4ad3-aee2-81dc0e316657
@@ -554,59 +634,147 @@ Clarification (maybe?):
 
 """
 
-# ╔═╡ e7d636fb-9a08-4bd5-a91a-856f3cd254be
-# ╠═╡ disabled = true
-#=╠═╡
-evals, evecs = eigen(infomat)
-  ╠═╡ =#
+# ╔═╡ c02cbdf4-d0b8-4d0e-bae2-703492efa517
+@model function correctmodel(nlogfreqs, data, fixatedwords, fixationdurations, ::Type{T} = Float64) where {T}
+	# Priors
+	μ ~ LogNormal(log(0.200), 1)
+	ν ~ Beta(1.25, 1.25) # = 0.25 * one(T) # 
+	β ~ Beta(1.25, 1.25) # = 0.6 #
+	r ~ LogNormal(log(1), 0.5) #LogNormal(log(10), 0.5) # = 10.0 * one(T) #
+	γ = one(T) # ~ truncated(Normal(1, 1), 0, Inf) # 
+	minsal = 10^-3 * one(T) # ~ Exponential(0.5)
+	
+	shapeparam = 9.0
+	rate0 = shapeparam / μ
+	σ = inv(1 + 2*ν + ν^2)
+	
+	Threads.@threads for pi in data
+		nwords = pi[1, :sentlength]
+		nfix = nrow(pi)
+		maxact = 1 .- β .* [nlogfreqs[k] for k in pi[1, :wordids]]
+		
+		activations = zeros(T, nwords)
+		saliencies = zeros(T, nwords)
+		probabilities = zeros(T, nwords)
+		λ = zeros(T, nwords)
+		currword = pi[1, :fixatedword]
+		
+		for row in eachrow(@view pi[1:end-1, :])
+			rowidx = parentindices(row)[1]
 
-# ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
-begin
-	nvals = 50
-	vals = [range(p0.μ - 0.25*p0.μ, 0.25*p0.μ + p0.μ, nvals),
-			#range(0.01, 0.99, nvals),
-			range(0.01, 0.99, nvals),
-			range(-p0.β, 3*p0.β, nvals),
-			range(p0.r - 0.25*p0.r, 0.25*p0.r + p0.r, nvals)]#,
-			#range(0, 0.25*p0.r + p0.r, nvals)]#,
-			#range(p0.γ - 0.5*p0.γ, 0.5*p0.γ + p0.γ, nvals)]
-	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
+			update_proc_rates!(λ, currword, ν, σ)
+			update_activations!(activations, r * 10, λ, row.fixationduration, maxact)
+			update_saliencies!(activations, saliencies, maxact, minsal)
+			update_probabilities!(probabilities, saliencies, γ)
+	
+			# Spatial LL
+			if !isprobvec(probabilities)
+				Turing.@addlogprob! -Inf
+			else
+				fixatedwords[rowidx+1] ~ Categorical(probabilities)
+			end
+	
+			# Temporal LL
+			currword = fixatedwords[rowidx+1]
+			currscl = inv(rate0)
+			if currscl <= eps(typeof(currscl))
+			#	@warn currscale
+				Turing.@addlogprob! -Inf
+			else
+				fixationdurations[currword] ~ currscl / 2 * Chisq(2 * shapeparam)
+			end
+		end
+	end
 end
 
-# ╔═╡ 79491206-8656-452c-a72b-af86fc620e1c
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	nvals = 50
-	vals = [range(0.01, 5, nvals), range(0.01, 5, nvals)]
-	lls = allprofs(hypomodel(), vals, hypomle.values.array; mll=hypomle.lp)
+# ╔═╡ a079e9fd-930d-461b-bee1-1962e2f04761
+"""
+	simsent_correct(nwords, ps, worddict, sentnr = missing)
+
+Simulates a single sentence with `nwords` using parameters `ps` and a dictionary containing word indices and their normalized log frequencies. `sentnr` is an optional sentence ID to save with the generated data.
+"""
+function simsent_correct(nwords, ps, worddict, sentnr = missing)
+	shapeparam = 9.0
+	rate0 = shapeparam / ps.μ
+	σ = inv(1 + 2*ps.ν + ps.ν^2)
+	minsal = 10^-3
+	wordids = rand(keys(worddict), nwords)
+	maxact = 1 .- ps.β .* [nlogfreqs[k] for k in wordids]
+	activations = zeros( nwords)
+	saliencies = zeros(nwords)
+	probabilities = zeros(nwords)
+	λ = zeros(nwords)
+	currword = 1
+	# Preallocating a place to save scanpath
+	scanpath = Array{NamedTuple}(undef, 0)
+	sizehint!(scanpath, nwords)
+
+	while any(activations .< maxact) && currword ≠ nwords
+		# Generate new fixation duration
+		currscl = inv(rate0)
+		fixdur = currscl / 2 * rand(Chisq(2 * shapeparam))
+		
+		# Updating
+		update_proc_rates!(λ, currword, ps.ν, σ)
+		update_activations!(activations, ps.r * 10, λ, fixdur, maxact)
+		update_saliencies!(activations, saliencies, maxact, minsal)
+		update_probabilities!(probabilities, saliencies, ps.γ)
+
+		# Saving
+		push!(scanpath, (sentnr = sentnr, sentlength = nwords, fixatedword = currword, wordid = wordids[currword], fixationduration = fixdur, wordids = wordids))
+	
+		# Make a saccade
+		currword = rand(Categorical(probabilities))
+	end
+
+	# Last fixation
+	currscl = inv(rate0)
+	fixdur = currscl / 2 * rand(Chisq(2 * shapeparam))
+	
+	push!(scanpath, (sentnr = sentnr, sentlength = nwords, fixatedword = currword, wordid = wordids[currword], fixationduration = fixdur, wordids = wordids))
+	
+	return scanpath
 end
-  ╠═╡ =#
 
-# ╔═╡ 69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
-# When considering all params at once:
-#cutoff = -0.5 * quantile(Chisq(length(paramnames)), 0.95) # mle0.lp
-# For 1D profiles:
-cutoff = -0.5 * quantile(Chisq(1), 0.95)
+# ╔═╡ 7c85285c-2a85-4d33-8c18-086c06f93850
+"""
+Simulate an experiment.
+"""
+function simexp_correct(nwordrange, nsents, worddict, ps)
+	# Preallocating space to save data
+	expdata = Array{NamedTuple}(undef, 0)
+	sizehint!(expdata, maximum(nwordrange) * nsents)
+	for i in 1:nsents
+		nwords = rand(nwordrange)
+		push!(expdata, simsent_correct(nwords, ps, worddict, i)...)
+	end
+	return DataFrame(expdata)
+end
 
-# ╔═╡ 7a659b74-58cf-47e5-ae3c-6561259a434a
-# ╠═╡ disabled = true
-#=╠═╡
-infomat = informationmatrix(hypomle)
-  ╠═╡ =#
+# ╔═╡ 558c20a1-9e16-4075-a3a1-667a455eae2d
+p0correct = (μ = 0.22, β = 0.6, ν = 0.25, r = 10.0, γ = 1.0, minsal = 0.001)
 
-# ╔═╡ 0e49d491-c07b-4a26-aaeb-34d7d5f2445f
-infomat = informationmatrix(mle0)
+# ╔═╡ 605d7aba-0769-4315-a99c-3d9286d94c17
+begin
+	correctdata = simexp_correct(sentlens, nsents, nlogfreqs, p0correct);
+	gdata_correct = groupby(correctdata, :sentnr);
+	nothing
+end
 
-# ╔═╡ 3a84a00c-b639-4b1d-adc8-9dae49bb8704
-evals, evecs = eigen(infomat)
+# ╔═╡ 6cf1bd2f-67c9-4094-b466-bc5bfabc99da
+correctmod = correctmodel(nlogfreqs, gdata_correct, correctdata.fixatedword, correctdata.fixationduration);
 
-# ╔═╡ c515689e-14d8-480a-8fc4-d46f08ed513d
-# ╠═╡ disabled = true
-#=╠═╡
-#cutoff = -0.5 * quantile(Chisq(2), 0.95)
-cutoff = hypomle.lp - 0.5 * quantile(Chisq(2), 0.95)
-  ╠═╡ =#
+# ╔═╡ 7fcfced5-64e3-431b-ad40-9f332b979620
+mlecorrect = optimize(correctmod, MLE(), [p0.μ, p0.ν, p0.β, p0.r]; autodiff=:forward)
+
+# ╔═╡ 4ab8abc4-8f26-4054-b6cc-1bed03279d9c
+cinfomat = informationmatrix(mlecorrect)
+
+# ╔═╡ b5039df9-a043-4c26-baae-e31eb2403f03
+cevals, cevecs = eigen(cinfomat)
+
+# ╔═╡ f491e407-09f0-42ae-b806-ff692e2441a3
+cond(infomat), rank(infomat)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2972,6 +3140,7 @@ version = "1.4.1+1"
 # ╠═75b466f8-b447-4bae-bce1-60e80f3c8a50
 # ╠═d21a7e29-b8a9-47ba-8a4d-f03741f55da5
 # ╠═8b83220f-8e3a-4605-b22e-f7534d9f3dec
+# ╠═7f60e641-7cbe-4e19-988d-8d4bfd9fae44
 # ╠═f18f941d-f188-4b03-8c28-b092b018e541
 # ╠═51ef3f2e-171b-4999-acd5-9613f4b13657
 # ╠═3b4c8ef2-27e6-48f3-b952-e4809b500a0f
@@ -2979,6 +3148,7 @@ version = "1.4.1+1"
 # ╠═8fec2b00-cf07-4f99-8b0e-1ce0efd99fb1
 # ╠═7b323eff-62ad-42b3-bb20-b29bad4e0dde
 # ╠═76b24479-77fa-4122-ab29-ad51f1424605
+# ╠═2e281e7f-1913-4e11-8aba-4b6ee3d81eb3
 # ╠═8b59d4f4-6ae4-49dc-b332-eacb30962e1d
 # ╠═8938bfd7-eab5-4d9a-ae66-c2e34578a325
 # ╠═eba6a86d-a314-4e74-8c74-1292a3464e09
@@ -2993,6 +3163,7 @@ version = "1.4.1+1"
 # ╠═57ea0d3a-45c0-48a6-b71e-08ec061a069a
 # ╠═d3c37fb9-7bf0-4eeb-b8de-58851f37454d
 # ╠═3a84a00c-b639-4b1d-adc8-9dae49bb8704
+# ╠═3b09cece-e077-4539-82f3-680538c5e8f5
 # ╠═e0dccf20-bb57-46dc-81a3-9f5167eb0f67
 # ╠═03a93254-d6b7-4961-819b-0864cfcea959
 # ╠═70bbaeb1-cf2e-4c25-aa17-8e885c9294be
@@ -3007,7 +3178,9 @@ version = "1.4.1+1"
 # ╠═0db88476-b098-4b76-80e3-ff316efb8d75
 # ╠═44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
 # ╠═99682ae9-6e40-480a-b233-481dbd4fef1e
+# ╠═2f727f45-3836-4a8d-902a-6bbac192d921
 # ╠═69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
+# ╠═164bc3f8-ee2f-4f4f-a3d9-dd8bdbe9db27
 # ╠═f1e3b447-6b88-480b-8074-437038024896
 # ╠═7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 # ╠═c6a9943e-d8cf-4425-b2bc-90335027cad4
@@ -3015,5 +3188,15 @@ version = "1.4.1+1"
 # ╠═a27c6b33-38b1-432d-93d6-4dbf3ee0e439
 # ╠═41850830-7698-4b31-8c2e-a8dd03b3098c
 # ╠═2e1e82f2-aa98-4880-909f-daf72d32dda7
+# ╠═c02cbdf4-d0b8-4d0e-bae2-703492efa517
+# ╠═a079e9fd-930d-461b-bee1-1962e2f04761
+# ╠═7c85285c-2a85-4d33-8c18-086c06f93850
+# ╠═558c20a1-9e16-4075-a3a1-667a455eae2d
+# ╠═605d7aba-0769-4315-a99c-3d9286d94c17
+# ╠═6cf1bd2f-67c9-4094-b466-bc5bfabc99da
+# ╠═7fcfced5-64e3-431b-ad40-9f332b979620
+# ╠═4ab8abc4-8f26-4054-b6cc-1bed03279d9c
+# ╠═b5039df9-a043-4c26-baae-e31eb2403f03
+# ╠═f491e407-09f0-42ae-b806-ff692e2441a3
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
