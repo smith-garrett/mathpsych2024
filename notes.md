@@ -48,3 +48,18 @@ than I've typically seen.
 When the likelihood and data generating code match, the likelihood profiles (calculated
 incorrectly) look worse. It's only with the mismatch that they look good.
 
+
+# 04.03.2024
+
+- Julia and R versions more or less producing equivalent output
+- R optim/nlm better able to find MLE close to true value
+- MCMC & MLE often show bias in mu, definitely in iota and kappa
+- Moving forward:
+    - Set η to -2 or -3, don't fit
+    - Re-parameterize ι/κ to make identifiable 
+
+
+# 10.06.2024
+
+- Sum beta and r to make them clearer examples of sloppiness
+

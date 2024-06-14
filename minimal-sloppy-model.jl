@@ -349,7 +349,7 @@ end
 # ╔═╡ 51ef3f2e-171b-4999-acd5-9613f4b13657
 # True parameter settings for generating data
 #p0 = (μ = 0.20, β = 0.6, ν = 0.25, r = 10.0, γ = 1.0, minsal=0.001)
-p0 = (μ = 0.220, β = 0.6, ν = 0.25, r = 1.0, γ = 1.0, minsal=0.001)
+p0 = (μ = 0.200, β = 0.6, ν = 0.25, r = 1.0, γ = 1.0, minsal=0.001)
 
 # ╔═╡ 7f60e641-7cbe-4e19-988d-8d4bfd9fae44
 begin
@@ -457,7 +457,7 @@ mod = basemodel(nlogfreqs, gdata, data.fixatedword, data.fixationduration);
 p0
 
 # ╔═╡ 9a2650ed-b241-49ef-90ab-d9766557f248
-mle0 = optimize(mod, MLE(), [p0.μ, p0.ν, p0.β, p0.r])#; autodiff=:forward)
+mle0 = optimize(mod, MLE(), [p0.μ, p0.ν, p0.β, p0.r]; autodiff=:forward)
 
 # ╔═╡ 0013e4a8-64d1-4886-ab63-ea00293c0d22
 paramnames = DynamicPPL.syms(DynamicPPL.VarInfo(mod))
@@ -519,7 +519,17 @@ evals ./ maximum(evals)
 rank(infomat, rtol=0.001), rank(infomat)
 
 # ╔═╡ db3d6756-dbea-446a-a2a4-f575b73240de
-scatter(ones(length(paramnames)), log10.(evals), xlims=(0.5, 1.5), xticks=nothing, ylabel="Order of magnitude of eigenvalues", legend=false, marker=:rect, markersize=5)
+begin
+	#=
+	eigvalplot = scatter(ones(length(paramnames)), log10.(evals), xlims=(0.5, 1.5), xticks=nothing, ylabel="Order of magnitude of eigenvalues", legend=false, marker=:rect, markersize=5)
+	ann = [(0.9, log10(evals[1]), "β, r"), (0.9, log10(evals[2]), "ν, r, β"), (0.9, log10(evals[3]), "ν, r, β"), (0.9, log10(evals[4]), "μ")]
+	annotate!(eigvalplot, ann)
+	=#
+	eigvalplot = scatter(1:4, log10.(evals), xlims=(0.75, 4.25), xticks=(1:4, ["β, r", "ν, β, r (1)", "ν, β, r (2)", "μ"]), ylabel="Log eigenvalues of OIM", markersize=7, legend=false, xlabel="Eigenparameters")
+end
+
+# ╔═╡ 361ea014-1257-475d-ad9b-5c83d4ec01ea
+#savefig(eigvalplot, "eigvalplot.pdf")
 
 # ╔═╡ cc9e6b48-83a0-43dc-9e17-a202ef950028
 """
@@ -576,14 +586,16 @@ inv(fim) * infomat
 # ╔═╡ 44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
 paramnames, p0
 
+# ╔═╡ aa5a9c9a-1116-4541-8376-3b05c48eeda0
+nvals = 50
+
 # ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
 begin
-	nvals = 25
-	vals = [range(p0.μ - 0.25*p0.μ, 0.25*p0.μ + p0.μ, nvals),
+	vals = [range(0.14, 0.22, nvals), # μ
 			#range(0.01, 0.99, nvals),
 			range(0.01, 0.99, nvals),
-			range(0.0, 4*p0.β, nvals),
-			range(p0.r - 0.25*p0.r, 2*p0.r + p0.r, nvals)]#,
+			range(0.01, 4, nvals), # β
+			range(0.01, 2, nvals)]#, #2.5*p0.r + max(p0.r, mle0.values.array[end]), nvals)]#,
 			#range(0, 0.25*p0.r + p0.r, nvals)]#,
 			#range(p0.γ - 0.5*p0.γ, 0.5*p0.γ + p0.γ, nvals)]
 	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
@@ -598,7 +610,8 @@ lls
 # For 1D profiles:
 #cutoff = -0.5 * quantile(Chisq(1), 0.95)
 # Likelihood interval, Royall 1997
-cutoff = -log(32)
+cutoff = -log(8)
+#cutoff = log(95/100)
 
 # ╔═╡ 164bc3f8-ee2f-4f4f-a3d9-dd8bdbe9db27
 -0.5 * quantile(Chisq(1), 0.95), -log(32), -log(8), -log(32 * (length(paramnames) - 1))
@@ -610,8 +623,11 @@ prof_mle = [maximum(x) for x in values(lls)]
 p0, nsents
 
 # ╔═╡ c6a9943e-d8cf-4425-b2bc-90335027cad4
-plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-25, 3))# ml=mle0.lp)
+sloppyprofs = plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-25, 3))# ml=mle0.lp)
 #plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
+
+# ╔═╡ b4a6a7d1-363d-49ef-ace2-0114a8c6f141
+#savefig(sloppyprofs, "sloppy_profs.pdf")
 
 # ╔═╡ abb7a33e-c9fc-4ad3-aee2-81dc0e316657
 #post0 = sample(mod, NUTS(), 1000);
@@ -752,7 +768,10 @@ function simexp_correct(nwordrange, nsents, worddict, ps)
 end
 
 # ╔═╡ 558c20a1-9e16-4075-a3a1-667a455eae2d
-p0correct = (μ = 0.22, β = 0.6, ν = 0.25, r = 10.0, γ = 1.0, minsal = 0.001)
+p0correct = (μ = 0.20, β = 0.6, ν = 0.25, r = 1.0, γ = 1.0, minsal = 0.001)
+
+# ╔═╡ 9983a3f5-d43b-4936-8fc6-85e6415f7d0b
+p0
 
 # ╔═╡ 605d7aba-0769-4315-a99c-3d9286d94c17
 begin
@@ -765,7 +784,7 @@ end
 correctmod = correctmodel(nlogfreqs, gdata_correct, correctdata.fixatedword, correctdata.fixationduration);
 
 # ╔═╡ 7fcfced5-64e3-431b-ad40-9f332b979620
-mlecorrect = optimize(correctmod, MLE(), [p0.μ, p0.ν, p0.β, p0.r]; autodiff=:forward)
+mlecorrect = optimize(correctmod, MLE(), [p0correct.μ, p0correct.ν, p0correct.β, p0correct.r]; autodiff=:forward)
 
 # ╔═╡ 4ab8abc4-8f26-4054-b6cc-1bed03279d9c
 cinfomat = informationmatrix(mlecorrect)
@@ -773,8 +792,38 @@ cinfomat = informationmatrix(mlecorrect)
 # ╔═╡ b5039df9-a043-4c26-baae-e31eb2403f03
 cevals, cevecs = eigen(cinfomat)
 
+# ╔═╡ fabd080b-5633-4eb7-8226-95f52e33c074
+ maximum(log10, cevals) ./ log10.(cevals)
+
 # ╔═╡ f491e407-09f0-42ae-b806-ff692e2441a3
-cond(infomat), rank(infomat)
+cond(cinfomat), rank(cinfomat)
+
+# ╔═╡ 888e4c80-d165-4dd9-b006-16cca114ca5c
+eigvalplot2 = scatter(1:4, log10.(cevals), xlims=(0.75, 4.25), xticks=(1:4, ["β, ν", "ν, r", "r, ν", "μ"]), ylabel="Log eigenvalues of OIM", markersize=7, legend=false, xlabel="Eigenparameters", ylims=(-0.1, 7))
+
+# ╔═╡ acbe7f34-12b3-4245-a199-e76dadb0aad3
+#savefig(eigvalplot2, "eigvalplot2.pdf")
+
+# ╔═╡ 86a51d19-e5d2-48fa-b173-cb7d83950332
+valscorrect = [range(p0.μ - 0.1*p0.μ, 0.1*p0.μ + p0.μ, nvals),
+			range(0.01, 0.99, nvals), # ν
+			range(0.01, 0.99, nvals), # β
+			range(0.75, 1.25, nvals)] # r
+
+# ╔═╡ 016aa8ae-60d2-46e8-8372-5bb319151f5b
+llscorrect = allprofs(correctmod, valscorrect, mlecorrect.values.array; mll=mlecorrect.lp)
+
+# ╔═╡ d34ca7a2-3180-46fb-8186-4e5d79f018ca
+prof_mle_correct = [maximum(x) for x in values(llscorrect)]
+
+# ╔═╡ 55157ce5-d7cf-4bb8-b6d7-dcc189be8543
+cprofplot = plotprofs(llscorrect, valscorrect, mlecorrect.values.array, p0correct; cutoff=cutoff, ml=prof_mle_correct, ylims=(-25, 3))
+
+# ╔═╡ 1ec6a4b9-ce2a-4c57-b841-255fe467c02c
+#savefig(cprofplot, "non-sloppy-profs.pdf")
+
+# ╔═╡ ac72a8aa-5de4-458b-8341-10bfeab7f5e2
+exp(-2)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -3169,6 +3218,7 @@ version = "1.4.1+1"
 # ╠═70bbaeb1-cf2e-4c25-aa17-8e885c9294be
 # ╠═a3b096a1-91df-4f32-b167-6d6993f5a302
 # ╠═db3d6756-dbea-446a-a2a4-f575b73240de
+# ╠═361ea014-1257-475d-ad9b-5c83d4ec01ea
 # ╠═cc9e6b48-83a0-43dc-9e17-a202ef950028
 # ╠═49331e69-57a3-4cc0-b7ba-e91509c71171
 # ╠═c9ca5cee-45a0-4955-8be4-42016c2b23a5
@@ -3177,6 +3227,7 @@ version = "1.4.1+1"
 # ╠═380e392e-6d51-4be5-8aef-0f6dd53514b4
 # ╠═0db88476-b098-4b76-80e3-ff316efb8d75
 # ╠═44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
+# ╠═aa5a9c9a-1116-4541-8376-3b05c48eeda0
 # ╠═99682ae9-6e40-480a-b233-481dbd4fef1e
 # ╠═2f727f45-3836-4a8d-902a-6bbac192d921
 # ╠═69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
@@ -3184,6 +3235,7 @@ version = "1.4.1+1"
 # ╠═f1e3b447-6b88-480b-8074-437038024896
 # ╠═7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 # ╠═c6a9943e-d8cf-4425-b2bc-90335027cad4
+# ╠═b4a6a7d1-363d-49ef-ace2-0114a8c6f141
 # ╠═abb7a33e-c9fc-4ad3-aee2-81dc0e316657
 # ╠═a27c6b33-38b1-432d-93d6-4dbf3ee0e439
 # ╠═41850830-7698-4b31-8c2e-a8dd03b3098c
@@ -3192,11 +3244,21 @@ version = "1.4.1+1"
 # ╠═a079e9fd-930d-461b-bee1-1962e2f04761
 # ╠═7c85285c-2a85-4d33-8c18-086c06f93850
 # ╠═558c20a1-9e16-4075-a3a1-667a455eae2d
+# ╠═9983a3f5-d43b-4936-8fc6-85e6415f7d0b
 # ╠═605d7aba-0769-4315-a99c-3d9286d94c17
 # ╠═6cf1bd2f-67c9-4094-b466-bc5bfabc99da
 # ╠═7fcfced5-64e3-431b-ad40-9f332b979620
 # ╠═4ab8abc4-8f26-4054-b6cc-1bed03279d9c
 # ╠═b5039df9-a043-4c26-baae-e31eb2403f03
+# ╠═fabd080b-5633-4eb7-8226-95f52e33c074
 # ╠═f491e407-09f0-42ae-b806-ff692e2441a3
+# ╠═888e4c80-d165-4dd9-b006-16cca114ca5c
+# ╠═acbe7f34-12b3-4245-a199-e76dadb0aad3
+# ╠═86a51d19-e5d2-48fa-b173-cb7d83950332
+# ╠═016aa8ae-60d2-46e8-8372-5bb319151f5b
+# ╠═d34ca7a2-3180-46fb-8186-4e5d79f018ca
+# ╠═55157ce5-d7cf-4bb8-b6d7-dcc189be8543
+# ╠═1ec6a4b9-ce2a-4c57-b841-255fe467c02c
+# ╠═ac72a8aa-5de4-458b-8341-10bfeab7f5e2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
