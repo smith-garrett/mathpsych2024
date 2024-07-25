@@ -11,6 +11,7 @@ begin
 	using Turing, Optim, ForwardDiff, DynamicPPL
 	using ExponentialUtilities
 	using OrderedCollections, DataFrames
+	using PlutoUI
 end
 
 # ╔═╡ 1c9b9076-03a7-11ef-19d0-95428f8e9a34
@@ -18,198 +19,8 @@ md"""
 # Parameter sloppiness in a model of eye-movement control during reading
 """
 
-# ╔═╡ 514080f5-5221-41bc-8961-ec3eaead3079
-md"""
-## Simplest possible example
-
-To illustrate the problem, I'll start with a very simple problem: a random variable distributed according to a two-rate hypoexponential distribution. This is a sum of two exponentially distributed variables with different rates.
-
-To begin, I'll simulate data with the true rate parameters λ₁ = 1.0 and λ₂ = 2.0.
-"""
-
-# ╔═╡ efc97b9c-316d-46dc-bf2b-791f06570440
-# ╠═╡ disabled = true
-#=╠═╡
-# Summed exponential problem, Transtrum
-begin
-	λ₁ = 1.0
-	λ₂ = 2.0
-	#hypodist = FPDistribution([-λ₁ 0; λ₁ -λ₂], [0.0 λ₂], [1, 0.0])
-	#hypodata = rand(hypodist, 100)
-	alltimes = 0:0.01:300
-	d = [exp(-λ₁ * t) + exp(-λ₂ * t) for t in alltimes]
-	#hypodata = d[[33, 100, 300]]
-	times = alltimes[1:50:end] #[[33, 100, 300]] #
-	hypodata = d[1:50:end] #[[33, 100, 300]] #
-end
-  ╠═╡ =#
-
-# ╔═╡ 89878b65-b4a0-470d-a3a4-074ee945d607
-#mean(hypodist), (1 + 1/λ₂), var(hypodist), (1 + 1/(λ₂^2))
-
-# ╔═╡ f1cccb61-6142-4135-9a35-9c404a372dff
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	density(hypodata)
-end
-  ╠═╡ =#
-
-# ╔═╡ 4c8f608e-59ec-4c5e-91ec-17c8a572be83
-# ╠═╡ disabled = true
-#=╠═╡
-plot(0:0.01:300, d)
-  ╠═╡ =#
-
-# ╔═╡ a984b5ee-8cad-4abd-9994-7fb28ea22f3b
-md"""
-I'll now set up a statistical model that we can use to fit the parameters
-"""
-
-# ╔═╡ 4b9b75c0-f6d2-403a-baf4-836a43e31581
-# ╠═╡ disabled = true
-#=╠═╡
-@model function hypomodel(data=hypodata, times=times, ::Type{T}=Float64) where {T}
-	l1 ~ Exponential()
-	l2 ~ Exponential()
-	#data .~ FPDistribution([-l1 0; l1 -l2], [0.0 l2], [1, 0.0])
-	#Turing.@addlogprob! sum(log, [(l1 * l2) / (l1 - l2) * (exp(-d*l2) - exp(-d*l1)) for d in data])
-	for i in 1:length(data)
-		data[i] ~ Normal(exp(-l1 * times[i]) + exp(-l2 * times[i]), 1)
-	end
-end
-  ╠═╡ =#
-
-# ╔═╡ 42b234c9-3e31-41e6-a37d-ee299ef9e4bb
-# ╠═╡ disabled = true
-#=╠═╡
-hypomle = optimize(hypomodel(), MLE(); autodiff=:forward)
-  ╠═╡ =#
-
-# ╔═╡ 7a659b74-58cf-47e5-ae3c-6561259a434a
-# ╠═╡ disabled = true
-#=╠═╡
-infomat = informationmatrix(hypomle)
-  ╠═╡ =#
-
-# ╔═╡ e7d636fb-9a08-4bd5-a91a-856f3cd254be
-# ╠═╡ disabled = true
-#=╠═╡
-evals, evecs = eigen(infomat)
-  ╠═╡ =#
-
-# ╔═╡ 68732e43-e836-43d0-a1ce-7236851653d7
-# ╠═╡ disabled = true
-#=╠═╡
-log.(evals)
-  ╠═╡ =#
-
-# ╔═╡ 21861534-4930-4c2c-a242-bfe0612c6f5e
-# ╠═╡ disabled = true
-#=╠═╡
-cond(infomat)
-  ╠═╡ =#
-
-# ╔═╡ aa0ae0fb-3ef6-45d5-8393-d8e08ddac095
-# ╠═╡ disabled = true
-#=╠═╡
-hypopost = sample(hypomodel(), NUTS(), 1000);
-  ╠═╡ =#
-
-# ╔═╡ 8bb04d97-7774-4dd3-b92b-e5bb81181804
-# ╠═╡ disabled = true
-#=╠═╡
-describe(hypopost)
-  ╠═╡ =#
-
-# ╔═╡ 744fab49-763c-4936-9e4b-92e04ed9a460
-# ╠═╡ disabled = true
-#=╠═╡
-plot(hypopost)
-  ╠═╡ =#
-
-# ╔═╡ abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
-function profll(mod, var, vals, inits; mll=nothing)
-	mles = zeros(size(vals, 1))
-	prevmle = zeros(length(inits))
-	for (i, v) in enumerate(vals)
-		if i == 1
-			#BFGS(alphaguess=0.01),LBFGS(m=20, alphaguess=0.01), Optim.Options(f_tol=0.0001)
-			omle = optimize(fix(mod, (; var => v)), MLE(), inits; autodiff=:forward)
-			mles[i] = omle.lp
-			prevmle = omle.values.array
-		else
-			omle = optimize(fix(mod, (; var => v)), MLE(), prevmle; autodiff=:forward)
-			#=
-			if !(omle.optim_result.f_converged)
-				global omle = optimize(fix(mod, (; var => v)), MLE(), inits, NelderMead())#; autodiff=:forward,)
-			end
-			=#
-			mles[i] = omle.lp
-			prevmle = omle.values.array
-		end
-	end
-	return mles
-end
-
-# ╔═╡ f4e26471-fba7-4947-9b96-0c46e6ab9fd6
-function allprofs(mod, vals, inits; mll=nothing)
-	@assert size(vals, 1) == length(inits) "Number of ranges must match number of variables"
-	vars = DynamicPPL.syms(DynamicPPL.VarInfo(mod))
-	mles = OrderedDict(v => Float64[] for v in vars)
-	for (i, v) in enumerate(vars)
-		#@show("Currently working on $v")
-		mles[v] = profll(mod, v, vals[i], inits[eachindex(inits) .∉ [i]]; mll)
-	end
-	return mles
-end
-
-# ╔═╡ 79491206-8656-452c-a72b-af86fc620e1c
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	nvals = 50
-	vals = [range(0.01, 5, nvals), range(0.01, 5, nvals)]
-	lls = allprofs(hypomodel(), vals, hypomle.values.array; mll=hypomle.lp)
-end
-  ╠═╡ =#
-
-# ╔═╡ 3f25aa3e-169b-41e5-b26b-e9a689ca3c10
-function plotprofs(lls, vals, mles = nothing, trues = nothing, args...; cutoff = nothing, ml = nothing, kwargs...)
-#function plotprofs(lls, vals, mles = nothing, trues = nothing)
-	p = plot(layout=(ceil(Int, length(lls) // 2), 2), margin=1*Plots.mm, args...; kwargs...)
-	for (i, v) in enumerate(keys(lls))
-		if !isnothing(ml)
-			plot!(p[i], vals[i], lls[v] .- ml[i], xlabel=String(v), label=nothing)
-		else
-			plot!(p[i], vals[i], lls[v], xlabel=String(v), label=nothing)
-		end
-		if cutoff != nothing
-			hline!(p[i], [cutoff], label="Cutoff")
-		end
-		if mles != nothing
-			vline!(p[i], [mles[i]], label="MLE")
-		end
-		if trues != nothing
-			vline!(p[i], [trues[v]], label="True value")
-		end
-	end
-	return p
-end
-
-# ╔═╡ c515689e-14d8-480a-8fc4-d46f08ed513d
-# ╠═╡ disabled = true
-#=╠═╡
-#cutoff = -0.5 * quantile(Chisq(2), 0.95)
-cutoff = hypomle.lp - 0.5 * quantile(Chisq(2), 0.95)
-  ╠═╡ =#
-
-# ╔═╡ 0751222e-ee9e-4589-91e3-c26cb84281ca
-# ╠═╡ disabled = true
-#=╠═╡
-#plotprofs(lls, vals, hypomle.values.array, (l1 = λ₁, l2 = λ₂)); cutoff=cutoff, ml=hypomle.lp)
-plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
-  ╠═╡ =#
+# ╔═╡ d41d67c3-9eda-48d4-974d-d1fa53e5a6c6
+TableOfContents()
 
 # ╔═╡ 7121a12e-3b67-4ce1-8de7-7a0260beab06
 md"""
@@ -248,14 +59,9 @@ function update_probabilities!(probs, sal, γ=1.0)
 	nothing
 end
 
-# ╔═╡ ae93860a-1b49-40ca-8807-e008879971e0
+# ╔═╡ 73a04cd0-155f-4c0b-adca-40853549f868
 md"""
-## Possible minimal sloppy model
-
-- β (word freq. param.) and γ (target selection exponent) interact via maxact
-- Nice side benefit: not obvious b/c hidden in layers of Zwischenfunktionen
-- Maybe just fit a model with μ, β, and γ
-
+## Simulating word frequencies
 """
 
 # ╔═╡ 1ebe8d49-f712-442a-8ee2-58ffa202d23e
@@ -282,14 +88,7 @@ md"""
 ## Rewriting the model to make things sloppier/less identifiable
 
 1. Set maxact to 1.0 for all words
-2. Word frequency should affect processing rate in || to `r`
-3. Ideas
-  - r + β * nlogfreq, β ~ Normal(0, σ): won't work b/c `r` isn't a vector
-  - r * (λ + β * nlogfreq), β ~ Normal₊(1, σ)
-
-## NEW REWRITE
-
-Word frequency affects activation spreading: The higher the frequency, the more activation spreads. Also a perfectly reasonable approach.
+2. Word frequency affects activation spreading: λ .* (1 .- exp.(-1 .* betas))
 """
 
 # ╔═╡ f18f941d-f188-4b03-8c28-b092b018e541
@@ -320,12 +119,10 @@ function simsent(nwords, ps, worddict, sentnr = missing)
 	#while any(activations .< 1) && currword < nwords
 		# Generate new fixation duration
 		currscl = inv(rate0)
-		#fixdur = rand(Gamma(shapeparam, currscl))
 		fixdur = currscl / 2 * rand(Chisq(2 * shapeparam))
 		
 		# Updating
 		update_proc_rates!(λ, currword, ps.ν, σ)
-		#update_activations!(activations, ps.r * 10, λ .* min.(1.1, 1 .+ betas), fixdur, maxact)
 		update_activations!(activations, ps.r * 10, λ .* (1 .- exp.(-1 .* betas)), fixdur, maxact)
 		update_saliencies!(activations, saliencies, maxact, minsal)
 		update_probabilities!(probabilities, saliencies, ps.γ)
@@ -387,26 +184,29 @@ end
 #plot(Beta(1.25, 1.25))
 plot(LogNormal(log(10), 0.5))
 
+# ╔═╡ fde2898e-9033-4e26-909a-a460907e90ec
+md"""
+## Setting up the sloppy model
+"""
+
 # ╔═╡ 76b24479-77fa-4122-ab29-ad51f1424605
 @model function basemodel(nlogfreqs, data, fixatedwords, fixationdurations, ::Type{T} = Float64) where {T}
 	# Priors
 	μ ~ LogNormal(log(0.200), 1)
-	ν ~ Beta(1.25, 1.25) # = 0.25 * one(T) # 
-	β ~ Normal(0, 0.05) # Beta(1.25, 1.25) # = 0.6 #
-	r ~ LogNormal(log(1), 0.5) #LogNormal(log(10), 0.5) # = 10.0 * one(T) #
-	γ = one(T) # ~ truncated(Normal(1, 1), 0, Inf) # 
-	minsal = 10^-3 * one(T) # ~ Exponential(0.5)
+	ν ~ Beta(1.25, 1.25)
+	β ~ Normal(0, 0.05)
+	r ~ LogNormal(log(1), 0.5)
+	γ = one(T)
+	minsal = 10^-3 * one(T)
 	
 	shapeparam = 9.0
 	rate0 = shapeparam / μ
 	σ = inv(1 + 2*ν + ν^2)
-	#minsal = 10^-3 * one(T)
 	
 	Threads.@threads for pi in data
 		nwords = pi[1, :sentlength]
 		maxact = ones(T, nwords)
 		nfix = nrow(pi)
-		#maxact = 1 .- β .* [nlogfreqs[k] for k in pi[1, :wordids]]
 		betas = β .* [nlogfreqs[k] for k in pi[1, :wordids]]
 		
 		activations = zeros(T, nwords)
@@ -419,7 +219,7 @@ plot(LogNormal(log(10), 0.5))
 			rowidx = parentindices(row)[1]
 
 			update_proc_rates!(λ, currword, ν, σ)
-			#update_activations!(activations, r * 10, λ .* min.(1.1, 1 .+ betas), row.fixationduration, maxact)
+			# Introducing an interaction between ν and β
 			update_activations!(activations, r * 10, λ .* (1 .- exp.(-1 .* betas)), row.fixationduration, maxact)
 			update_saliencies!(activations, saliencies, maxact, minsal)
 			update_probabilities!(probabilities, saliencies, γ)
@@ -435,7 +235,6 @@ plot(LogNormal(log(10), 0.5))
 			currword = fixatedwords[rowidx+1]
 			currscl = inv(rate0)
 			if currscl <= eps(typeof(currscl))
-			#	@warn currscale
 				Turing.@addlogprob! -Inf
 			else
 				fixationdurations[currword] ~ currscl / 2 * Chisq(2 * shapeparam)
@@ -443,9 +242,6 @@ plot(LogNormal(log(10), 0.5))
 		end
 	end
 end
-
-# ╔═╡ 2e281e7f-1913-4e11-8aba-4b6ee3d81eb3
-plot(x -> 1 - exp(-x), xlims=(0, 5))
 
 # ╔═╡ 8b59d4f4-6ae4-49dc-b332-eacb30962e1d
 gdata = groupby(data, :sentnr);
@@ -456,11 +252,21 @@ mod = basemodel(nlogfreqs, gdata, data.fixatedword, data.fixationduration);
 # ╔═╡ eba6a86d-a314-4e74-8c74-1292a3464e09
 p0
 
+# ╔═╡ fb63b70a-29bc-4abb-87c6-a00997765b6c
+md"""
+### Finding the MLE
+"""
+
 # ╔═╡ 9a2650ed-b241-49ef-90ab-d9766557f248
 mle0 = optimize(mod, MLE(), [p0.μ, p0.ν, p0.β, p0.r]; autodiff=:forward)
 
 # ╔═╡ 0013e4a8-64d1-4886-ab63-ea00293c0d22
 paramnames = DynamicPPL.syms(DynamicPPL.VarInfo(mod))
+
+# ╔═╡ 2abf2173-86b0-408d-a34e-87911eb69ea8
+md"""
+### Bias and coefficient of variation
+"""
 
 # ╔═╡ 7c93aa5b-0340-4ca1-a524-89a0a2182476
 # Some of these are quite biased...
@@ -475,58 +281,80 @@ catch
 	@warn "Bad matrix"
 end
 
-# ╔═╡ 0e49d491-c07b-4a26-aaeb-34d7d5f2445f
-infomat = informationmatrix(mle0)
+# ╔═╡ a4604e6d-f654-4974-b1c1-3b5ad162e047
+md"""
+## Observed information matrix and related techniques
+"""
 
-# ╔═╡ 9ea8260b-5345-48b5-b131-74225ed8c237
-# Strong negative curvature for μ, much weaker for β and r
--1 .* infomat
+# ╔═╡ 0e49d491-c07b-4a26-aaeb-34d7d5f2445f
+#=╠═╡
+infomat = informationmatrix(mle0)
+  ╠═╡ =#
 
 # ╔═╡ e0fdb160-73d0-4b6e-8404-a0969f24ee0d
+#=╠═╡
 isposdef(infomat)
+  ╠═╡ =#
 
 # ╔═╡ 76355b9b-2106-49eb-ac86-a3558b0f5217
+# Normal approximation, probably especially inappropriate in sloppy models
 vcov(mle0)
 
 # ╔═╡ 57ea0d3a-45c0-48a6-b71e-08ec061a069a
 cormat = cor(vcov(mle0))
 
 # ╔═╡ d3c37fb9-7bf0-4eeb-b8de-58851f37454d
+#=╠═╡
 begin
 	nms = keys(infomat.dicts[1])
 	heatmap(cormat, yflip=true, ticks=(1:length(paramnames), nms))#, fc=:default)
 	annotate!([(j, i, text(round(cormat[i, j], digits=3), :grey)) for i in 1:size(cormat, 1) for j in 1:size(cormat, 2)])
 end
+  ╠═╡ =#
+
+# ╔═╡ 8052c8f3-0ff5-4bce-b33d-ea694ae2d084
+md"""
+### Eigendecomposition analysis
+"""
 
 # ╔═╡ 3a84a00c-b639-4b1d-adc8-9dae49bb8704
+#=╠═╡
 evals, evecs = eigen(infomat)
+  ╠═╡ =#
 
 # ╔═╡ 3b09cece-e077-4539-82f3-680538c5e8f5
+#=╠═╡
 log10.(evals)
+  ╠═╡ =#
 
 # ╔═╡ e0dccf20-bb57-46dc-81a3-9f5167eb0f67
+#=╠═╡
 log10(maximum(abs.(evals)) / minimum(abs.(evals)))
+  ╠═╡ =#
 
 # ╔═╡ 03a93254-d6b7-4961-819b-0864cfcea959
+#=╠═╡
 cond(infomat)
+  ╠═╡ =#
 
 # ╔═╡ 70bbaeb1-cf2e-4c25-aa17-8e885c9294be
+#=╠═╡
 # Suggests there are two unidentifiable parameters, r and β
 # b/c their eigenvalues are below the cutoff of 0.001
 evals ./ maximum(evals)
+  ╠═╡ =#
 
 # ╔═╡ a3b096a1-91df-4f32-b167-6d6993f5a302
+#=╠═╡
 rank(infomat, rtol=0.001), rank(infomat)
+  ╠═╡ =#
 
 # ╔═╡ db3d6756-dbea-446a-a2a4-f575b73240de
+#=╠═╡
 begin
-	#=
-	eigvalplot = scatter(ones(length(paramnames)), log10.(evals), xlims=(0.5, 1.5), xticks=nothing, ylabel="Order of magnitude of eigenvalues", legend=false, marker=:rect, markersize=5)
-	ann = [(0.9, log10(evals[1]), "β, r"), (0.9, log10(evals[2]), "ν, r, β"), (0.9, log10(evals[3]), "ν, r, β"), (0.9, log10(evals[4]), "μ")]
-	annotate!(eigvalplot, ann)
-	=#
 	eigvalplot = scatter(1:4, log10.(evals), xlims=(0.75, 4.25), xticks=(1:4, ["β, r", "ν, β, r (1)", "ν, β, r (2)", "μ"]), ylabel="Log eigenvalues of OIM", markersize=7, legend=false, xlabel="Eigenparameters")
 end
+  ╠═╡ =#
 
 # ╔═╡ 361ea014-1257-475d-ad9b-5c83d4ec01ea
 #savefig(eigvalplot, "eigvalplot.pdf")
@@ -542,13 +370,12 @@ function efim(gdata, mle, returnscore=false)
 	score = zeros(size(mle, 1), length(gdata))
 	for i in 1:length(gdata)
 		mod = basemodel(nlogfreqs, gdata[i:i], data.fixatedword, data.fixationduration)
-		∇𝑙 = ForwardDiff.gradient(x -> loglikelihood(mod, (μ = x[1], ν = x[2], β = x[3], r = x[4])), mle)#0.values.array)
-		#∇𝑙 = ForwardDiff.gradient(x -> loglikelihood(mod, (μ = x[1], β = x[2], r = x[3], γ = x[4])), mle)
+		∇𝑙 = ForwardDiff.gradient(x -> loglikelihood(mod, (μ = x[1], ν = x[2], β = x[3], r = x[4])), mle)
 		I .+= ∇𝑙 * ∇𝑙'
 		score .+= ∇𝑙
 	end
 	if returnscore
-		return I ./ length(gdata), score# ./ length(gdata)
+		return I ./ length(gdata), score
 	else
 		return I ./ length(gdata)
 	end
@@ -556,7 +383,7 @@ end
 
 # ╔═╡ 49331e69-57a3-4cc0-b7ba-e91509c71171
 md"""
-### What expected Fisher information tells us
+#### What expected Fisher information tells us
 
 Pawitan (2001, Ch. 8.3, pp. 216-217): ↑ information = easier to estimate, can get away with smaller sample. ↓ information = harder to estimate, need more data.
 
@@ -575,68 +402,120 @@ fevals, fevecs = eigen(fim)
 # ╔═╡ df448153-81e9-459f-b30e-904348e660cd
 scatter(ones(length(paramnames)), log10.(fevals), xlims=(0.5, 1.5), xticks=nothing, ylabel="Order of magnitude of eigenvalues", legend=false, marker=:rect, markersize=5)
 
-# ╔═╡ 380e392e-6d51-4be5-8aef-0f6dd53514b4
-# andrews2015maximum: Comparing observed & Fisher information
-(fim .- infomat) ./ fim
-
-# ╔═╡ 0db88476-b098-4b76-80e3-ff316efb8d75
-# Test for asymptotic normality of the MLE, should approach ones...?
-inv(fim) * infomat
-
 # ╔═╡ 44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
 paramnames, p0
 
-# ╔═╡ aa5a9c9a-1116-4541-8376-3b05c48eeda0
-nvals = 50
+# ╔═╡ e7d636fb-9a08-4bd5-a91a-856f3cd254be
+#=╠═╡
+md"""
+## Profile likelihoods
 
-# ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
-begin
-	vals = [range(0.14, 0.22, nvals), # μ
-			#range(0.01, 0.99, nvals),
-			range(0.01, 0.99, nvals),
-			range(0.01, 4, nvals), # β
-			range(0.01, 2, nvals)]#, #2.5*p0.r + max(p0.r, mle0.values.array[end]), nvals)]#,
-			#range(0, 0.25*p0.r + p0.r, nvals)]#,
-			#range(p0.γ - 0.5*p0.γ, 0.5*p0.γ + p0.γ, nvals)]
-	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
+Profile likelihoods approximate a multidimensional likelihood function that would be otherwise hard to visualize. For each parameter in the model, we pick a range of values to evaluate. We then fix the parameter at that value and maximize the restricted likelihood over the remaining parameters. Once we've done this for the whole range of values, we can plot the profile likelihood for the parameter. This is repeated for each parameter in the model.
+
+"""
+  ╠═╡ =#
+
+# ╔═╡ abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
+function profll(mod, var, vals, inits; mll=nothing)
+	mles = zeros(size(vals, 1))
+	prevmle = zeros(length(inits))
+	for (i, v) in enumerate(vals)
+		if i == 1
+			omle = optimize(fix(mod, (; var => v)), MLE(), inits; autodiff=:forward)
+			mles[i] = omle.lp
+			prevmle = omle.values.array
+		else # Use the previous MLE as the starting point.
+			omle = optimize(fix(mod, (; var => v)), MLE(), prevmle; autodiff=:forward)
+			mles[i] = omle.lp
+			prevmle = omle.values.array
+		end
+	end
+	return mles
 end
 
+# ╔═╡ f4e26471-fba7-4947-9b96-0c46e6ab9fd6
+function allprofs(mod, vals, inits; mll=nothing)
+	@assert size(vals, 1) == length(inits) "Number of ranges must match number of variables"
+	vars = DynamicPPL.syms(DynamicPPL.VarInfo(mod))
+	mles = OrderedDict(v => Float64[] for v in vars)
+	for (i, v) in enumerate(vars)
+		mles[v] = profll(mod, v, vals[i], inits[eachindex(inits) .∉ [i]]; mll)
+	end
+	return mles
+end
+
+# ╔═╡ 3f25aa3e-169b-41e5-b26b-e9a689ca3c10
+function plotprofs(lls, vals, mles = nothing, trues = nothing, args...; cutoff = nothing, ml = nothing, kwargs...)
+	p = plot(layout=(ceil(Int, length(lls) // 2), 2), margin=1*Plots.mm, args...; kwargs...)
+	for (i, v) in enumerate(keys(lls))
+		if !isnothing(ml)
+			plot!(p[i], vals[i], lls[v] .- ml[i], xlabel=String(v), label=nothing)
+		else
+			plot!(p[i], vals[i], lls[v], xlabel=String(v), label=nothing)
+		end
+		if cutoff != nothing
+			hline!(p[i], [cutoff], label="Cutoff")
+		end
+		if mles != nothing
+			vline!(p[i], [mles[i]], label="MLE")
+		end
+		if trues != nothing
+			vline!(p[i], [trues[v]], label="True value")
+		end
+	end
+	return p
+end
+
+# ╔═╡ aa5a9c9a-1116-4541-8376-3b05c48eeda0
+#=╠═╡
+nvals = 50
+  ╠═╡ =#
+
+# ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
+#=╠═╡
+begin
+	vals = [range(0.14, 0.22, nvals), # μ
+			range(0.01, 0.99, nvals),
+			range(0.01, 4, nvals), # β
+			range(0.01, 2, nvals)]
+	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
+end
+  ╠═╡ =#
+
 # ╔═╡ 2f727f45-3836-4a8d-902a-6bbac192d921
+#=╠═╡
 lls
+  ╠═╡ =#
 
 # ╔═╡ 69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
+#=╠═╡
 # When considering all params at once:
 #cutoff = -0.5 * quantile(Chisq(length(paramnames)), 0.95) # mle0.lp
-# For 1D profiles:
-#cutoff = -0.5 * quantile(Chisq(1), 0.95)
+
 # Likelihood interval, Royall 1997
 cutoff = -log(8)
 #cutoff = log(95/100)
+  ╠═╡ =#
 
 # ╔═╡ 164bc3f8-ee2f-4f4f-a3d9-dd8bdbe9db27
 -0.5 * quantile(Chisq(1), 0.95), -log(32), -log(8), -log(32 * (length(paramnames) - 1))
 
 # ╔═╡ f1e3b447-6b88-480b-8074-437038024896
+#=╠═╡
 prof_mle = [maximum(x) for x in values(lls)]
+  ╠═╡ =#
 
 # ╔═╡ 7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 p0, nsents
 
 # ╔═╡ c6a9943e-d8cf-4425-b2bc-90335027cad4
+#=╠═╡
 sloppyprofs = plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-25, 3))# ml=mle0.lp)
 #plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
+  ╠═╡ =#
 
 # ╔═╡ b4a6a7d1-363d-49ef-ace2-0114a8c6f141
 #savefig(sloppyprofs, "sloppy_profs.pdf")
-
-# ╔═╡ abb7a33e-c9fc-4ad3-aee2-81dc0e316657
-#post0 = sample(mod, NUTS(), 1000);
-
-# ╔═╡ a27c6b33-38b1-432d-93d6-4dbf3ee0e439
-#plot(post0)
-
-# ╔═╡ 41850830-7698-4b31-8c2e-a8dd03b3098c
-#describe(post0)
 
 # ╔═╡ 2e1e82f2-aa98-4880-909f-daf72d32dda7
 md"""
@@ -650,15 +529,22 @@ Clarification (maybe?):
 
 """
 
+# ╔═╡ 192f9851-8578-4ff6-844f-91cdaaa19a36
+md"""
+## The correct model
+
+Following Engbert & Rabe (2024, J.Math.Psych.)
+"""
+
 # ╔═╡ c02cbdf4-d0b8-4d0e-bae2-703492efa517
 @model function correctmodel(nlogfreqs, data, fixatedwords, fixationdurations, ::Type{T} = Float64) where {T}
 	# Priors
 	μ ~ LogNormal(log(0.200), 1)
-	ν ~ Beta(1.25, 1.25) # = 0.25 * one(T) # 
-	β ~ Beta(1.25, 1.25) # = 0.6 #
-	r ~ LogNormal(log(1), 0.5) #LogNormal(log(10), 0.5) # = 10.0 * one(T) #
-	γ = one(T) # ~ truncated(Normal(1, 1), 0, Inf) # 
-	minsal = 10^-3 * one(T) # ~ Exponential(0.5)
+	ν ~ Beta(1.25, 1.25)
+	β ~ Beta(1.25, 1.25)
+	r ~ LogNormal(log(1), 0.5)
+	γ = one(T)
+	minsal = 10^-3 * one(T)
 	
 	shapeparam = 9.0
 	rate0 = shapeparam / μ
@@ -694,7 +580,6 @@ Clarification (maybe?):
 			currword = fixatedwords[rowidx+1]
 			currscl = inv(rate0)
 			if currscl <= eps(typeof(currscl))
-			#	@warn currscale
 				Turing.@addlogprob! -Inf
 			else
 				fixationdurations[currword] ~ currscl / 2 * Chisq(2 * shapeparam)
@@ -805,25 +690,30 @@ eigvalplot2 = scatter(1:4, log10.(cevals), xlims=(0.75, 4.25), xticks=(1:4, ["β
 #savefig(eigvalplot2, "eigvalplot2.pdf")
 
 # ╔═╡ 86a51d19-e5d2-48fa-b173-cb7d83950332
+#=╠═╡
 valscorrect = [range(p0.μ - 0.1*p0.μ, 0.1*p0.μ + p0.μ, nvals),
 			range(0.01, 0.99, nvals), # ν
 			range(0.01, 0.99, nvals), # β
 			range(0.75, 1.25, nvals)] # r
+  ╠═╡ =#
 
 # ╔═╡ 016aa8ae-60d2-46e8-8372-5bb319151f5b
+#=╠═╡
 llscorrect = allprofs(correctmod, valscorrect, mlecorrect.values.array; mll=mlecorrect.lp)
+  ╠═╡ =#
 
 # ╔═╡ d34ca7a2-3180-46fb-8186-4e5d79f018ca
+#=╠═╡
 prof_mle_correct = [maximum(x) for x in values(llscorrect)]
+  ╠═╡ =#
 
 # ╔═╡ 55157ce5-d7cf-4bb8-b6d7-dcc189be8543
+#=╠═╡
 cprofplot = plotprofs(llscorrect, valscorrect, mlecorrect.values.array, p0correct; cutoff=cutoff, ml=prof_mle_correct, ylims=(-25, 3))
+  ╠═╡ =#
 
 # ╔═╡ 1ec6a4b9-ce2a-4c57-b841-255fe467c02c
 #savefig(cprofplot, "non-sloppy-profs.pdf")
-
-# ╔═╡ ac72a8aa-5de4-458b-8341-10bfeab7f5e2
-exp(-2)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -3156,33 +3046,13 @@ version = "1.4.1+1"
 # ╔═╡ Cell order:
 # ╠═1c9b9076-03a7-11ef-19d0-95428f8e9a34
 # ╠═eb0a89af-5b30-4ff5-a163-c10d3671ae6d
-# ╠═514080f5-5221-41bc-8961-ec3eaead3079
-# ╠═efc97b9c-316d-46dc-bf2b-791f06570440
-# ╠═89878b65-b4a0-470d-a3a4-074ee945d607
-# ╠═f1cccb61-6142-4135-9a35-9c404a372dff
-# ╠═4c8f608e-59ec-4c5e-91ec-17c8a572be83
-# ╠═a984b5ee-8cad-4abd-9994-7fb28ea22f3b
-# ╠═4b9b75c0-f6d2-403a-baf4-836a43e31581
-# ╠═42b234c9-3e31-41e6-a37d-ee299ef9e4bb
-# ╠═7a659b74-58cf-47e5-ae3c-6561259a434a
-# ╠═e7d636fb-9a08-4bd5-a91a-856f3cd254be
-# ╠═68732e43-e836-43d0-a1ce-7236851653d7
-# ╠═21861534-4930-4c2c-a242-bfe0612c6f5e
-# ╠═aa0ae0fb-3ef6-45d5-8393-d8e08ddac095
-# ╠═8bb04d97-7774-4dd3-b92b-e5bb81181804
-# ╠═744fab49-763c-4936-9e4b-92e04ed9a460
-# ╠═abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
-# ╠═f4e26471-fba7-4947-9b96-0c46e6ab9fd6
-# ╠═79491206-8656-452c-a72b-af86fc620e1c
-# ╠═3f25aa3e-169b-41e5-b26b-e9a689ca3c10
-# ╠═c515689e-14d8-480a-8fc4-d46f08ed513d
-# ╠═0751222e-ee9e-4589-91e3-c26cb84281ca
+# ╠═d41d67c3-9eda-48d4-974d-d1fa53e5a6c6
 # ╠═7121a12e-3b67-4ce1-8de7-7a0260beab06
 # ╠═af92117b-1352-45be-9e7f-5301c8e21104
 # ╠═a59814c0-a067-4ac9-b840-0c978e6105fd
 # ╠═9c2c5b18-de2d-4973-bf0e-2e4d6fb4fbdc
 # ╠═50512e67-1d00-4dbb-a23d-a04b85a29812
-# ╠═ae93860a-1b49-40ca-8807-e008879971e0
+# ╠═73a04cd0-155f-4c0b-adca-40853549f868
 # ╠═1ebe8d49-f712-442a-8ee2-58ffa202d23e
 # ╠═8056ad14-205b-49e5-9c75-45369ce3774e
 # ╠═7c00fd73-86d1-4dd4-941d-963093f67013
@@ -3196,21 +3066,24 @@ version = "1.4.1+1"
 # ╠═42c11ead-2085-4625-8678-fa2c1feaa0d1
 # ╠═8fec2b00-cf07-4f99-8b0e-1ce0efd99fb1
 # ╠═7b323eff-62ad-42b3-bb20-b29bad4e0dde
+# ╠═fde2898e-9033-4e26-909a-a460907e90ec
 # ╠═76b24479-77fa-4122-ab29-ad51f1424605
-# ╠═2e281e7f-1913-4e11-8aba-4b6ee3d81eb3
 # ╠═8b59d4f4-6ae4-49dc-b332-eacb30962e1d
 # ╠═8938bfd7-eab5-4d9a-ae66-c2e34578a325
 # ╠═eba6a86d-a314-4e74-8c74-1292a3464e09
+# ╠═fb63b70a-29bc-4abb-87c6-a00997765b6c
 # ╠═9a2650ed-b241-49ef-90ab-d9766557f248
 # ╠═0013e4a8-64d1-4886-ab63-ea00293c0d22
+# ╠═2abf2173-86b0-408d-a34e-87911eb69ea8
 # ╠═7c93aa5b-0340-4ca1-a524-89a0a2182476
 # ╠═b026ba0c-bc2f-4bf6-b736-5026d5aa2a1d
+# ╠═a4604e6d-f654-4974-b1c1-3b5ad162e047
 # ╠═0e49d491-c07b-4a26-aaeb-34d7d5f2445f
-# ╠═9ea8260b-5345-48b5-b131-74225ed8c237
 # ╠═e0fdb160-73d0-4b6e-8404-a0969f24ee0d
 # ╠═76355b9b-2106-49eb-ac86-a3558b0f5217
 # ╠═57ea0d3a-45c0-48a6-b71e-08ec061a069a
 # ╠═d3c37fb9-7bf0-4eeb-b8de-58851f37454d
+# ╠═8052c8f3-0ff5-4bce-b33d-ea694ae2d084
 # ╠═3a84a00c-b639-4b1d-adc8-9dae49bb8704
 # ╠═3b09cece-e077-4539-82f3-680538c5e8f5
 # ╠═e0dccf20-bb57-46dc-81a3-9f5167eb0f67
@@ -3224,9 +3097,11 @@ version = "1.4.1+1"
 # ╠═c9ca5cee-45a0-4955-8be4-42016c2b23a5
 # ╠═21744067-e381-4aad-bf91-9307e14cf646
 # ╠═df448153-81e9-459f-b30e-904348e660cd
-# ╠═380e392e-6d51-4be5-8aef-0f6dd53514b4
-# ╠═0db88476-b098-4b76-80e3-ff316efb8d75
 # ╠═44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
+# ╠═e7d636fb-9a08-4bd5-a91a-856f3cd254be
+# ╠═abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
+# ╠═f4e26471-fba7-4947-9b96-0c46e6ab9fd6
+# ╠═3f25aa3e-169b-41e5-b26b-e9a689ca3c10
 # ╠═aa5a9c9a-1116-4541-8376-3b05c48eeda0
 # ╠═99682ae9-6e40-480a-b233-481dbd4fef1e
 # ╠═2f727f45-3836-4a8d-902a-6bbac192d921
@@ -3236,10 +3111,8 @@ version = "1.4.1+1"
 # ╠═7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 # ╠═c6a9943e-d8cf-4425-b2bc-90335027cad4
 # ╠═b4a6a7d1-363d-49ef-ace2-0114a8c6f141
-# ╠═abb7a33e-c9fc-4ad3-aee2-81dc0e316657
-# ╠═a27c6b33-38b1-432d-93d6-4dbf3ee0e439
-# ╠═41850830-7698-4b31-8c2e-a8dd03b3098c
 # ╠═2e1e82f2-aa98-4880-909f-daf72d32dda7
+# ╠═192f9851-8578-4ff6-844f-91cdaaa19a36
 # ╠═c02cbdf4-d0b8-4d0e-bae2-703492efa517
 # ╠═a079e9fd-930d-461b-bee1-1962e2f04761
 # ╠═7c85285c-2a85-4d33-8c18-086c06f93850
@@ -3259,6 +3132,5 @@ version = "1.4.1+1"
 # ╠═d34ca7a2-3180-46fb-8186-4e5d79f018ca
 # ╠═55157ce5-d7cf-4bb8-b6d7-dcc189be8543
 # ╠═1ec6a4b9-ce2a-4c57-b841-255fe467c02c
-# ╠═ac72a8aa-5de4-458b-8341-10bfeab7f5e2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
