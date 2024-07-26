@@ -53,14 +53,12 @@ toyLL <- function(lfreq,fixpos,fixdur,nu,r,mt,iota,eta,beta,kappa) {
     
     # 4. Temporal loglik
     tfix = fixdur[j+1]   # fixation duration observed in the data
-    # ERROR!!! Saliency is summed here, but multiplied in the toygen.R!!!
+    # Fixed: Saliency is now a product instead of a sum
     if ( k>1 )  leftact = prod(1+kappa*(s[1:(k-1)]-10^eta)) #sum(s[1:(k-1)]) #
-    else leftact = 1 #leftact = 0
-    # ERROR!!! Or at least confusion: the *current* word is used here for iota, but
-    # the *next* word is used for the dgamma...
-    # ERROR!!! kappa is multiplied here again...
-    rate2 = rate*(1+iota*a[k]) / leftact#(1+kappa*leftact)
-    # Garrett's addition:
+    else leftact = 1
+    # Fixed: removed extra multiplication of kappa
+    rate2 = rate*(1+iota*a[k]) / leftact #(1+kappa*leftact)
+    # Garrett's addition to deal with fehlerhaftem Verhalten von dgamma with small params:
     if (rate2^-1 <= .Machine$double.eps) {
         LLtime = LLtime + -Inf
     } else {

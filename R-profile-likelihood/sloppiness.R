@@ -13,7 +13,7 @@ nll <- function(ps) {
 inits <- c(0.385299, 8.12581, 205.279, 0.001, -4.95495, 0.565822, 0.001)
 nll(inits)
 
-mle <- optim(par=inits, fn=nll, method="CG", hessian=T)#, control=c(maxit=1000, reltol=0.0))
+mle <- optim(par=inits, fn=nll, method="BFGS", hessian=T)#, control=c(maxit=1000, reltol=0.0))
 mle2 <- nlm(nll, inits, hessian=T, gradtol=1e-8, steptol=1e-8, print.level=2)
 mle
 mle2
@@ -21,3 +21,6 @@ mle2
 #H <- optimHess(mle$par, nll)
 Idecomp <- eigen(mle2$hessian)
 (min(abs(Idecomp$values)) / max(abs(Idecomp$values))) < 0.001
+
+round(Idecomp$values, 3)
+round(Idecomp$vectors, 3)
