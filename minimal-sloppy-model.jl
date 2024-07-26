@@ -16,7 +16,17 @@ end
 
 # ╔═╡ 1c9b9076-03a7-11ef-19d0-95428f8e9a34
 md"""
-# Parameter sloppiness in a model of eye-movement control during reading
+# Investigating parameter identifiability and "sloppiness" in a dynamical model of reading
+
+Abstract from our [2024 Virtual MathPsych conference talk](https://mathpsych.org/presentation/1391):
+
+	Theories of many cognitive processes can be expressed as dynamical process models. In order to test the hypotheses that the models implement, we must calibrate them to experimental data by fitting free parameters. In this work, we study a version of the SWIFT model of eye-movement control during reading (Engbert et al., 2005, Psych. Rev.; Engbert & Rabe, 2023, under review) to illustrate two related issues that can arise in models with multiple free parameters: parameter identifiability and sloppiness. The parameters of a model are identifiable for a given data set when it is possible to find a finite confidence interval for the parameter (Raue et al., 2009, Bioninformatics). When a parameter is non-identifiable, parameter fitting can be difficult and misleading, even if the fitted model's output looks reasonable. Sloppiness arises when there are large differences in how sensitive the model's output is to changes in different parameters (Brown & Sethna, 2003, Phys. Rev. E). Sloppiness can also lead to difficulty in model calibration and make interpreting model output challenging, as an analysis of sloppiness often reveals that there are combinations of parameters that vary systematically together with no change in the model's predictions. To our knowledge, parameter identifiability and sloppiness have received little attention in cognitive science, even though the structure of many models is susceptible to these problems. In this talk, we will discuss methods for identifying and addressing parameter non-identifiability and model sloppiness, which can lead to simpler models and more informative fits to experimental data.
+
+See the talk for further references and suggestions for additional tools one can use.
+
+## Overview
+Here, I use simulated data to investigate the identifiability and sloppiness of models. I implement versions of the simplified SWIFT model from Engbert & Rabe (2024, *J.Math.Psych.*) using the probabilistic programming tool [Turing.jl](https://turinglang.org/) to set up the likelihood functions.
+
 """
 
 # ╔═╡ d41d67c3-9eda-48d4-974d-d1fa53e5a6c6
@@ -25,6 +35,13 @@ TableOfContents()
 # ╔═╡ 7121a12e-3b67-4ce1-8de7-7a0260beab06
 md"""
 ## Simple model of eye-movement control
+
+The overall processing dynamics are closely based on Engbert & Rabe (2024, *J.Math.Psych.*). The main exception for the sloppy model has to do with how word frequency, activation spreading, and activation growth interact. In the sloppy model:
+
+1. The maximum activation for each word is set to 1.0 and
+2. Word frequency affects activation spreading: $λ(1 - \exp(-β * wordfreq))$, which in turn interacts with the `r` parameter contolling how fast activation grows when a word is within the processing span.
+
+The following functions are all common to both the sloppy and correct model versions.
 """
 
 # ╔═╡ af92117b-1352-45be-9e7f-5301c8e21104
@@ -62,6 +79,8 @@ end
 # ╔═╡ 73a04cd0-155f-4c0b-adca-40853549f868
 md"""
 ## Simulating word frequencies
+
+In order to test the models, we need to generate data. Since the word frequency parameter `β` plays a large role in our analyses, we need to have a realistic distribution of word frequencies. For that, I generate word frequencies according to a [Zipfian distribution](https://en.wikipedia.org/wiki/Zipf%27s_law).
 """
 
 # ╔═╡ 1ebe8d49-f712-442a-8ee2-58ffa202d23e
@@ -83,12 +102,11 @@ mx = maximum(values(cts))
 # ╔═╡ d21a7e29-b8a9-47ba-8a4d-f03741f55da5
 nlogfreqs = Dict(k => cts[k] / mx for k in keys(cts))
 
-# ╔═╡ 8b83220f-8e3a-4605-b22e-f7534d9f3dec
+# ╔═╡ c5c75241-e495-4648-acd8-df3cc3ce160f
 md"""
-## Rewriting the model to make things sloppier/less identifiable
+### Actually simulating an experimental data set
 
-1. Set maxact to 1.0 for all words
-2. Word frequency affects activation spreading: λ .* (1 .- exp.(-1 .* betas))
+For demonstration purposes, I am not simulating different parameters for each participant or item. I am just simulating a number of sentences with a single parameter.
 """
 
 # ╔═╡ f18f941d-f188-4b03-8c28-b092b018e541
@@ -145,8 +163,7 @@ end
 
 # ╔═╡ 51ef3f2e-171b-4999-acd5-9613f4b13657
 # True parameter settings for generating data
-#p0 = (μ = 0.20, β = 0.6, ν = 0.25, r = 10.0, γ = 1.0, minsal=0.001)
-p0 = (μ = 0.200, β = 0.6, ν = 0.25, r = 1.0, γ = 1.0, minsal=0.001)
+p0 = (μ = 0.200, β = 1.6, ν = 0.25, r = 1.0, γ = 1.0, minsal=0.001)
 
 # ╔═╡ 7f60e641-7cbe-4e19-988d-8d4bfd9fae44
 begin
@@ -179,10 +196,6 @@ begin
 	nsents = 100 # 114 # 200
 	data = simexp(sentlens, nsents, nlogfreqs, p0)
 end
-
-# ╔═╡ 7b323eff-62ad-42b3-bb20-b29bad4e0dde
-#plot(Beta(1.25, 1.25))
-plot(LogNormal(log(10), 0.5))
 
 # ╔═╡ fde2898e-9033-4e26-909a-a460907e90ec
 md"""
@@ -255,6 +268,8 @@ p0
 # ╔═╡ fb63b70a-29bc-4abb-87c6-a00997765b6c
 md"""
 ### Finding the MLE
+
+The MLE will be important for a number of techniques below, so I fit it first.
 """
 
 # ╔═╡ 9a2650ed-b241-49ef-90ab-d9766557f248
@@ -266,6 +281,10 @@ paramnames = DynamicPPL.syms(DynamicPPL.VarInfo(mod))
 # ╔═╡ 2abf2173-86b0-408d-a34e-87911eb69ea8
 md"""
 ### Bias and coefficient of variation
+
+A first check we can do is to look at the bias in the MLE estimates. We see that there is quite a bit of bias, especially for `β` and `r`. Bias should be as close to zero as possible (Cole, 2020, *Parameter redundancy and identifiability*), but `β` is off by ~400% and `r` is off by 45%.
+
+The coefficient of variability (SE(θ) / θ̄) should also be less than one, indicating low variability in the parameter estimate relative to the magnitude of the mean parameter estimate. Here, `ν, β`, and `r` are all much higher than `μ`, although they are less than one.
 """
 
 # ╔═╡ 7c93aa5b-0340-4ca1-a524-89a0a2182476
@@ -284,33 +303,20 @@ end
 # ╔═╡ a4604e6d-f654-4974-b1c1-3b5ad162e047
 md"""
 ## Observed information matrix and related techniques
+
+The observed information matrix is the negative of the Hessian matrix of the likelihood evaluated at the MLE. The Hessian matrix is the matrix of partial second derivatives of the likelihood function and provides information about the curvature of the likelihood surface.
+
+The observed information matrix tells us how informative small changes in a parameter are with regard to the model's output. If an entry in the observed information matrix is large, then a small change in that parameter leads to a big change in the likelihood of the data.
+
+Often it is most informative to look at an eigenvalue decomposition of the observed information matrix.
 """
 
 # ╔═╡ 0e49d491-c07b-4a26-aaeb-34d7d5f2445f
-#=╠═╡
 infomat = informationmatrix(mle0)
-  ╠═╡ =#
 
 # ╔═╡ e0fdb160-73d0-4b6e-8404-a0969f24ee0d
-#=╠═╡
+# Positive definiteness as a proxy for a well-behaved matrix
 isposdef(infomat)
-  ╠═╡ =#
-
-# ╔═╡ 76355b9b-2106-49eb-ac86-a3558b0f5217
-# Normal approximation, probably especially inappropriate in sloppy models
-vcov(mle0)
-
-# ╔═╡ 57ea0d3a-45c0-48a6-b71e-08ec061a069a
-cormat = cor(vcov(mle0))
-
-# ╔═╡ d3c37fb9-7bf0-4eeb-b8de-58851f37454d
-#=╠═╡
-begin
-	nms = keys(infomat.dicts[1])
-	heatmap(cormat, yflip=true, ticks=(1:length(paramnames), nms))#, fc=:default)
-	annotate!([(j, i, text(round(cormat[i, j], digits=3), :grey)) for i in 1:size(cormat, 1) for j in 1:size(cormat, 2)])
-end
-  ╠═╡ =#
 
 # ╔═╡ 8052c8f3-0ff5-4bce-b33d-ea694ae2d084
 md"""
@@ -318,46 +324,58 @@ md"""
 """
 
 # ╔═╡ 3a84a00c-b639-4b1d-adc8-9dae49bb8704
-#=╠═╡
 evals, evecs = eigen(infomat)
-  ╠═╡ =#
 
 # ╔═╡ 3b09cece-e077-4539-82f3-680538c5e8f5
-#=╠═╡
 log10.(evals)
-  ╠═╡ =#
 
 # ╔═╡ e0dccf20-bb57-46dc-81a3-9f5167eb0f67
-#=╠═╡
+# The ratio of the larges to the smallest eigenvalues provides info about sloppiness
 log10(maximum(abs.(evals)) / minimum(abs.(evals)))
-  ╠═╡ =#
 
 # ╔═╡ 03a93254-d6b7-4961-819b-0864cfcea959
-#=╠═╡
 cond(infomat)
-  ╠═╡ =#
 
 # ╔═╡ 70bbaeb1-cf2e-4c25-aa17-8e885c9294be
-#=╠═╡
 # Suggests there are two unidentifiable parameters, r and β
-# b/c their eigenvalues are below the cutoff of 0.001
+# b/c their eigenvalues are below the cutoff of 0.001, Cole 2020
 evals ./ maximum(evals)
-  ╠═╡ =#
 
 # ╔═╡ a3b096a1-91df-4f32-b167-6d6993f5a302
-#=╠═╡
 rank(infomat, rtol=0.001), rank(infomat)
-  ╠═╡ =#
 
 # ╔═╡ db3d6756-dbea-446a-a2a4-f575b73240de
-#=╠═╡
 begin
 	eigvalplot = scatter(1:4, log10.(evals), xlims=(0.75, 4.25), xticks=(1:4, ["β, r", "ν, β, r (1)", "ν, β, r (2)", "μ"]), ylabel="Log eigenvalues of OIM", markersize=7, legend=false, xlabel="Eigenparameters")
 end
-  ╠═╡ =#
+
+# ╔═╡ d88c3011-01af-4edf-b1cf-f3ce46760c84
+md"""
+These eigendecomposition analyses provide a number of interesting points.
+- First, the log eigenvalues span more than three orders of magnitude and they are more or less evenly spaced from smalles to largest, so the common criteria for sloppiness are met.
+
+  This means that some parameters will be easy to estimate while others become gradually hard to estimate. For the parameters associated with the smallest eigenvalues, there will be broad swaths of parameter space that all produce roughly the same model behavior (as indexed by the likelihood function).
+
+- In addition, using a loose tolerance to calculate the rank of the observed information matrix, we have evidence that the parameters `r` and `β` are nearly redundant (Cole, 2020): There is a very similar model with those parameters eliminated or combined that produces approximately the same behavior.
+
+From these analyses, we should expect there to be parameter (combinations) for which large changes only result in small changes in model predictions.
+
+
+"""
 
 # ╔═╡ 361ea014-1257-475d-ad9b-5c83d4ec01ea
 #savefig(eigvalplot, "eigvalplot.pdf")
+
+# ╔═╡ 49331e69-57a3-4cc0-b7ba-e91509c71171
+md"""
+### The expected Fisher information matrix
+
+The expected Fisher information matrix (FIM) is closely related to the observed information matrix. The Fisher information matrix is evaluated at the *true* parameter values instead of the MLE (like the observed information matrix), so the FIM provides information about how easy/hard it is to recover the true parameter values instead of how hard it was to estimate the MLE *for this particular data set*.  Here, we're estimating the expected Fisher information with a numerical approximation. The observed information (above) also tells us about how easy/hard it is to estimate, but it's based *on a single data set* and is therefore less general. (See, e.g., Pawitan, 2001 *In all likelihood* for a discussion of the differences.) 
+
+The discussion in Pawitan (2001, Ch. 8.3, pp. 216-217) can be summarized as: increasing FIM means the parameter(s) is/are easier to estimate, and we can get away with smaller sample. On the other hand, a lower FIM means harder estimation and a need for more data.
+
+The results of the analyses almost always point in the same direction.
+"""
 
 # ╔═╡ cc9e6b48-83a0-43dc-9e17-a202ef950028
 """
@@ -381,15 +399,6 @@ function efim(gdata, mle, returnscore=false)
 	end
 end
 
-# ╔═╡ 49331e69-57a3-4cc0-b7ba-e91509c71171
-md"""
-#### What expected Fisher information tells us
-
-Pawitan (2001, Ch. 8.3, pp. 216-217): ↑ information = easier to estimate, can get away with smaller sample. ↓ information = harder to estimate, need more data.
-
-Here, we're estimating the expected Fisher information with a numerical approximation. The observed information (above) also tells us about how easy/hard it is to estimate, but it's based *on a single data set* and is therefore less general.
-"""
-
 # ╔═╡ c9ca5cee-45a0-4955-8be4-42016c2b23a5
 # Pawitan 2001, Ch. 8.3, p. 216--217:
 # Fisher information evaluated at param values that generated the data
@@ -406,14 +415,12 @@ scatter(ones(length(paramnames)), log10.(fevals), xlims=(0.5, 1.5), xticks=nothi
 paramnames, p0
 
 # ╔═╡ e7d636fb-9a08-4bd5-a91a-856f3cd254be
-#=╠═╡
 md"""
 ## Profile likelihoods
 
 Profile likelihoods approximate a multidimensional likelihood function that would be otherwise hard to visualize. For each parameter in the model, we pick a range of values to evaluate. We then fix the parameter at that value and maximize the restricted likelihood over the remaining parameters. Once we've done this for the whole range of values, we can plot the profile likelihood for the parameter. This is repeated for each parameter in the model.
 
 """
-  ╠═╡ =#
 
 # ╔═╡ abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
 function profll(mod, var, vals, inits; mll=nothing)
@@ -467,12 +474,9 @@ function plotprofs(lls, vals, mles = nothing, trues = nothing, args...; cutoff =
 end
 
 # ╔═╡ aa5a9c9a-1116-4541-8376-3b05c48eeda0
-#=╠═╡
 nvals = 50
-  ╠═╡ =#
 
 # ╔═╡ 99682ae9-6e40-480a-b233-481dbd4fef1e
-#=╠═╡
 begin
 	vals = [range(0.14, 0.22, nvals), # μ
 			range(0.01, 0.99, nvals),
@@ -480,52 +484,46 @@ begin
 			range(0.01, 2, nvals)]
 	lls = allprofs(mod, vals, mle0.values.array; mll=mle0.lp)
 end
-  ╠═╡ =#
 
 # ╔═╡ 2f727f45-3836-4a8d-902a-6bbac192d921
-#=╠═╡
 lls
-  ╠═╡ =#
 
 # ╔═╡ 69bab3e5-b5bf-4ca7-a6cf-6f26d5376dce
-#=╠═╡
 # When considering all params at once:
 #cutoff = -0.5 * quantile(Chisq(length(paramnames)), 0.95) # mle0.lp
 
 # Likelihood interval, Royall 1997
 cutoff = -log(8)
 #cutoff = log(95/100)
-  ╠═╡ =#
 
 # ╔═╡ 164bc3f8-ee2f-4f4f-a3d9-dd8bdbe9db27
--0.5 * quantile(Chisq(1), 0.95), -log(32), -log(8), -log(32 * (length(paramnames) - 1))
+-0.5 * quantile(Chisq(length(paramnames)), 0.95), -log(32), -log(8), -log(32 * (length(paramnames) - 1))
 
 # ╔═╡ f1e3b447-6b88-480b-8074-437038024896
-#=╠═╡
 prof_mle = [maximum(x) for x in values(lls)]
-  ╠═╡ =#
 
 # ╔═╡ 7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 p0, nsents
 
 # ╔═╡ c6a9943e-d8cf-4425-b2bc-90335027cad4
-#=╠═╡
 sloppyprofs = plotprofs(lls, vals, mle0.values.array, p0; cutoff=cutoff, ml=prof_mle, ylims=(-25, 3))# ml=mle0.lp)
 #plotprofs(lls, vals, nothing, (l1 = λ₁, l2 = λ₂); cutoff=nothing, ml=hypomle.lp)
-  ╠═╡ =#
 
 # ╔═╡ b4a6a7d1-363d-49ef-ace2-0114a8c6f141
 #savefig(sloppyprofs, "sloppy_profs.pdf")
 
-# ╔═╡ 2e1e82f2-aa98-4880-909f-daf72d32dda7
+# ╔═╡ 774c22d9-66b9-4412-971a-606aa572fb7b
 md"""
-## Important to note:
+### Interpreting the profile likelihoods
 
-Near-redundancy/sloppiness ≠ practical identifiability
+The profile likelihoods show us a couple of interesting things:
+- First, there is often significant bias in the MLEs: The estimated and true values are often not very close.
+- Second, the `r` parameter, which controls the speed of activation increase, seems to be practically non-identifiable (Raue et al., 2009, *Bioinformatics*). That is, its confidence interval is not bounded; it flattens out above the cutoff towards positive infinity.
 
-Clarification (maybe?):
-- Near redundant = ∃ small eigenvalues
-- Sloppiness: eigenvalues have large range from small to large, more or less evenly distributed on log scale
+  While there does seem to be a maximum for `r`, there is still an infinite range of `r` values that produce the same model behavior.
+- It will likely be hard to estimate `β`: Its profile is quite flat, which means there are many parameter settings that are almost identical in their output, a sign of sloppiness. This is reinforced by the eigenvalue associated with the combination `r-β` eigen parameter shown above, which was much smaller than the other eigenvalues.
+
+Overall, the profile likelihoods paint much the same picture as the information matrix analyses: The `r` and `β` parameter will be hard or impossible to estimate, as there are parameter settings that produce (almost) identical model outputs. The model is both sloppy and practically non-identifiable.
 
 """
 
@@ -534,6 +532,8 @@ md"""
 ## The correct model
 
 Following Engbert & Rabe (2024, J.Math.Psych.)
+
+The difference between this model and the sloppy model is that the `β` (word frequency) and `r` (activation growth rate) parameters are better separated and have stronger and more independent effects on the model output.
 """
 
 # ╔═╡ c02cbdf4-d0b8-4d0e-bae2-703492efa517
@@ -690,30 +690,31 @@ eigvalplot2 = scatter(1:4, log10.(cevals), xlims=(0.75, 4.25), xticks=(1:4, ["β
 #savefig(eigvalplot2, "eigvalplot2.pdf")
 
 # ╔═╡ 86a51d19-e5d2-48fa-b173-cb7d83950332
-#=╠═╡
 valscorrect = [range(p0.μ - 0.1*p0.μ, 0.1*p0.μ + p0.μ, nvals),
 			range(0.01, 0.99, nvals), # ν
 			range(0.01, 0.99, nvals), # β
 			range(0.75, 1.25, nvals)] # r
-  ╠═╡ =#
 
 # ╔═╡ 016aa8ae-60d2-46e8-8372-5bb319151f5b
-#=╠═╡
 llscorrect = allprofs(correctmod, valscorrect, mlecorrect.values.array; mll=mlecorrect.lp)
-  ╠═╡ =#
 
 # ╔═╡ d34ca7a2-3180-46fb-8186-4e5d79f018ca
-#=╠═╡
 prof_mle_correct = [maximum(x) for x in values(llscorrect)]
-  ╠═╡ =#
 
 # ╔═╡ 55157ce5-d7cf-4bb8-b6d7-dcc189be8543
-#=╠═╡
 cprofplot = plotprofs(llscorrect, valscorrect, mlecorrect.values.array, p0correct; cutoff=cutoff, ml=prof_mle_correct, ylims=(-25, 3))
-  ╠═╡ =#
 
 # ╔═╡ 1ec6a4b9-ce2a-4c57-b841-255fe467c02c
 #savefig(cprofplot, "non-sloppy-profs.pdf")
+
+# ╔═╡ 2c996dca-c976-4c33-9936-7b8e6df70f26
+md"""
+### Diagnostics for the correct model
+
+As shown above, the diagnostics for sloppiness and identifiability look much better for the correct model:
+- The eigenvalues of the observed information matrix are much less spread out and higher overall, indicating that each of the (eigen-) parameters has a stronger effect on the model's predictions.
+- The profile likelihoods show clear peaks near the true parameter values. There is less bias, the confidence intervals are all bounded, and the peaks are more strongly curved, which all point to much improved identifiability.
+"""
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -727,6 +728,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
@@ -740,6 +742,7 @@ ForwardDiff = "~0.10.36"
 Optim = "~1.9.4"
 OrderedCollections = "~1.6.3"
 Plots = "~1.40.4"
+PlutoUI = "~0.7.59"
 StatsBase = "~0.34.3"
 StatsPlots = "~0.15.7"
 Turing = "~0.31.1"
@@ -751,7 +754,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.1"
 manifest_format = "2.0"
-project_hash = "adff93153b6431979f565d8d704b36805e074240"
+project_hash = "185eb4ffaa6aa9c063f7e21762aee91a014cfbfa"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "fc02d55798c1af91123d07915a990fbb9a10d146"
@@ -788,6 +791,12 @@ deps = ["AbstractMCMC", "Accessors", "DensityInterface", "Random"]
 git-tree-sha1 = "6380a9a03a4207bac53ac310dd3a283bb4df54ef"
 uuid = "7a57a42e-76ec-4ea3-a279-07e840d6d9cf"
 version = "0.8.4"
+
+[[deps.AbstractPlutoDingetjes]]
+deps = ["Pkg"]
+git-tree-sha1 = "6e1d2a35f2f90a4bc7c2ed98079b2ba09c35b83a"
+uuid = "6e696c72-6542-2067-7265-42206c756150"
+version = "1.3.2"
 
 [[deps.AbstractTrees]]
 git-tree-sha1 = "2d9c9a55f9c93e8887ad391fbae72f8ef55e1177"
@@ -1541,6 +1550,24 @@ git-tree-sha1 = "f218fe3736ddf977e0e772bc9a586b2383da2685"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
 version = "0.3.23"
 
+[[deps.Hyperscript]]
+deps = ["Test"]
+git-tree-sha1 = "179267cfa5e712760cd43dcae385d7ea90cc25a4"
+uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
+version = "0.0.5"
+
+[[deps.HypertextLiteral]]
+deps = ["Tricks"]
+git-tree-sha1 = "7134810b1afce04bbc1045ca1985fbe81ce17653"
+uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
+version = "0.9.5"
+
+[[deps.IOCapture]]
+deps = ["Logging", "Random"]
+git-tree-sha1 = "b6d6bfdd7ce25b0f9b2f6b3dd56b2673a66c8770"
+uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
+version = "0.2.5"
+
 [[deps.InitialValues]]
 git-tree-sha1 = "4da0f88e9a39111c2fa3add390ab15f3a44f3ca3"
 uuid = "22cec73e-a1b8-11e9-2c92-598750a2cf9c"
@@ -1897,6 +1924,11 @@ git-tree-sha1 = "8ba8b1840d3ab5b38e7c71c23c3193bb5cbc02b5"
 uuid = "be115224-59cd-429b-ad48-344e309966f0"
 version = "0.3.10"
 
+[[deps.MIMEs]]
+git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
+uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
+version = "0.1.4"
+
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
 git-tree-sha1 = "80b2833b56d466b3858d565adcd16a4a05f2089b"
@@ -2163,6 +2195,12 @@ version = "1.40.4"
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.PlutoUI]]
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "ab55ee1510ad2af0ff674dbcced5e94921f867a9"
+uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+version = "0.7.59"
 
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -2658,6 +2696,11 @@ version = "0.4.82"
     OnlineStatsBase = "925886fa-5bf2-5e8e-b522-a9147a512338"
     Referenceables = "42d2dcc6-99eb-4e98-b66c-637b7d73030e"
 
+[[deps.Tricks]]
+git-tree-sha1 = "eae1bb484cd63b36999ee58be2de6c178105112f"
+uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
+version = "0.1.8"
+
 [[deps.Turing]]
 deps = ["ADTypes", "AbstractMCMC", "Accessors", "AdvancedHMC", "AdvancedMH", "AdvancedPS", "AdvancedVI", "BangBang", "Bijectors", "DataStructures", "Distributions", "DistributionsAD", "DocStringExtensions", "DynamicPPL", "EllipticalSliceSampling", "ForwardDiff", "Libtask", "LinearAlgebra", "LogDensityProblems", "LogDensityProblemsAD", "MCMCChains", "NamedArrays", "Printf", "Random", "Reexport", "Requires", "SciMLBase", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
 git-tree-sha1 = "e54c9974f6b574f1619b44247ee10fd3b66f3354"
@@ -3044,45 +3087,41 @@ version = "1.4.1+1"
 """
 
 # ╔═╡ Cell order:
-# ╠═1c9b9076-03a7-11ef-19d0-95428f8e9a34
+# ╟─1c9b9076-03a7-11ef-19d0-95428f8e9a34
 # ╠═eb0a89af-5b30-4ff5-a163-c10d3671ae6d
 # ╠═d41d67c3-9eda-48d4-974d-d1fa53e5a6c6
-# ╠═7121a12e-3b67-4ce1-8de7-7a0260beab06
+# ╟─7121a12e-3b67-4ce1-8de7-7a0260beab06
 # ╠═af92117b-1352-45be-9e7f-5301c8e21104
 # ╠═a59814c0-a067-4ac9-b840-0c978e6105fd
 # ╠═9c2c5b18-de2d-4973-bf0e-2e4d6fb4fbdc
 # ╠═50512e67-1d00-4dbb-a23d-a04b85a29812
-# ╠═73a04cd0-155f-4c0b-adca-40853549f868
+# ╟─73a04cd0-155f-4c0b-adca-40853549f868
 # ╠═1ebe8d49-f712-442a-8ee2-58ffa202d23e
 # ╠═8056ad14-205b-49e5-9c75-45369ce3774e
 # ╠═7c00fd73-86d1-4dd4-941d-963093f67013
 # ╠═75b466f8-b447-4bae-bce1-60e80f3c8a50
 # ╠═d21a7e29-b8a9-47ba-8a4d-f03741f55da5
-# ╠═8b83220f-8e3a-4605-b22e-f7534d9f3dec
 # ╠═7f60e641-7cbe-4e19-988d-8d4bfd9fae44
+# ╟─c5c75241-e495-4648-acd8-df3cc3ce160f
 # ╠═f18f941d-f188-4b03-8c28-b092b018e541
 # ╠═51ef3f2e-171b-4999-acd5-9613f4b13657
 # ╠═3b4c8ef2-27e6-48f3-b952-e4809b500a0f
 # ╠═42c11ead-2085-4625-8678-fa2c1feaa0d1
 # ╠═8fec2b00-cf07-4f99-8b0e-1ce0efd99fb1
-# ╠═7b323eff-62ad-42b3-bb20-b29bad4e0dde
-# ╠═fde2898e-9033-4e26-909a-a460907e90ec
+# ╟─fde2898e-9033-4e26-909a-a460907e90ec
 # ╠═76b24479-77fa-4122-ab29-ad51f1424605
 # ╠═8b59d4f4-6ae4-49dc-b332-eacb30962e1d
 # ╠═8938bfd7-eab5-4d9a-ae66-c2e34578a325
 # ╠═eba6a86d-a314-4e74-8c74-1292a3464e09
-# ╠═fb63b70a-29bc-4abb-87c6-a00997765b6c
+# ╟─fb63b70a-29bc-4abb-87c6-a00997765b6c
 # ╠═9a2650ed-b241-49ef-90ab-d9766557f248
 # ╠═0013e4a8-64d1-4886-ab63-ea00293c0d22
-# ╠═2abf2173-86b0-408d-a34e-87911eb69ea8
+# ╟─2abf2173-86b0-408d-a34e-87911eb69ea8
 # ╠═7c93aa5b-0340-4ca1-a524-89a0a2182476
 # ╠═b026ba0c-bc2f-4bf6-b736-5026d5aa2a1d
-# ╠═a4604e6d-f654-4974-b1c1-3b5ad162e047
+# ╟─a4604e6d-f654-4974-b1c1-3b5ad162e047
 # ╠═0e49d491-c07b-4a26-aaeb-34d7d5f2445f
 # ╠═e0fdb160-73d0-4b6e-8404-a0969f24ee0d
-# ╠═76355b9b-2106-49eb-ac86-a3558b0f5217
-# ╠═57ea0d3a-45c0-48a6-b71e-08ec061a069a
-# ╠═d3c37fb9-7bf0-4eeb-b8de-58851f37454d
 # ╠═8052c8f3-0ff5-4bce-b33d-ea694ae2d084
 # ╠═3a84a00c-b639-4b1d-adc8-9dae49bb8704
 # ╠═3b09cece-e077-4539-82f3-680538c5e8f5
@@ -3091,14 +3130,15 @@ version = "1.4.1+1"
 # ╠═70bbaeb1-cf2e-4c25-aa17-8e885c9294be
 # ╠═a3b096a1-91df-4f32-b167-6d6993f5a302
 # ╠═db3d6756-dbea-446a-a2a4-f575b73240de
+# ╟─d88c3011-01af-4edf-b1cf-f3ce46760c84
 # ╠═361ea014-1257-475d-ad9b-5c83d4ec01ea
+# ╟─49331e69-57a3-4cc0-b7ba-e91509c71171
 # ╠═cc9e6b48-83a0-43dc-9e17-a202ef950028
-# ╠═49331e69-57a3-4cc0-b7ba-e91509c71171
 # ╠═c9ca5cee-45a0-4955-8be4-42016c2b23a5
 # ╠═21744067-e381-4aad-bf91-9307e14cf646
 # ╠═df448153-81e9-459f-b30e-904348e660cd
 # ╠═44abf7f1-8b19-445f-8bdd-8a4b9b6a82fd
-# ╠═e7d636fb-9a08-4bd5-a91a-856f3cd254be
+# ╟─e7d636fb-9a08-4bd5-a91a-856f3cd254be
 # ╠═abe3d27c-9f3b-4c3d-9731-4149e4fd2c7b
 # ╠═f4e26471-fba7-4947-9b96-0c46e6ab9fd6
 # ╠═3f25aa3e-169b-41e5-b26b-e9a689ca3c10
@@ -3111,8 +3151,8 @@ version = "1.4.1+1"
 # ╠═7fd06dbc-23d2-4e75-954e-f505b2a4c9aa
 # ╠═c6a9943e-d8cf-4425-b2bc-90335027cad4
 # ╠═b4a6a7d1-363d-49ef-ace2-0114a8c6f141
-# ╠═2e1e82f2-aa98-4880-909f-daf72d32dda7
-# ╠═192f9851-8578-4ff6-844f-91cdaaa19a36
+# ╟─774c22d9-66b9-4412-971a-606aa572fb7b
+# ╟─192f9851-8578-4ff6-844f-91cdaaa19a36
 # ╠═c02cbdf4-d0b8-4d0e-bae2-703492efa517
 # ╠═a079e9fd-930d-461b-bee1-1962e2f04761
 # ╠═7c85285c-2a85-4d33-8c18-086c06f93850
@@ -3132,5 +3172,6 @@ version = "1.4.1+1"
 # ╠═d34ca7a2-3180-46fb-8186-4e5d79f018ca
 # ╠═55157ce5-d7cf-4bb8-b6d7-dcc189be8543
 # ╠═1ec6a4b9-ce2a-4c57-b841-255fe467c02c
+# ╟─2c996dca-c976-4c33-9936-7b8e6df70f26
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
